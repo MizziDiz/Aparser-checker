@@ -1,3 +1,12 @@
 # локальные секреты и состояние — не коммитить
 aparser_monitor.config.json
 aparser_monitor.state.json
+
+# дампы web-интерфейса (могут содержать ваши данные заданий)
+ui_dumps/
+ui_dump.html
+ui_dump.png
+
+# кэш Python
+__pycache__/
+*.pyc
