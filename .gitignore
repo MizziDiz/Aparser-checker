@@ -1,0 +1,3 @@
+# локальные секреты и состояние — не коммитить
+aparser_monitor.config.json
+aparser_monitor.state.json

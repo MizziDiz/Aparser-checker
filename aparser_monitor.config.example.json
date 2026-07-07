@@ -1,0 +1,9 @@
+{
+  "aparser_url": "http://127.0.0.1:9091/API",
+  "aparser_password": "ВАШ_ПАРОЛЬ_ОТ_API_A-PARSER",
+  "telegram_bot_token": "123456:ABC-ВАШ_ТОКЕН_БОТА",
+  "telegram_chat_id": "ВАШ_CHAT_ID",
+  "error_threshold": 0.5,
+  "cooldown_hours": 8,
+  "min_requests": 20
+}
