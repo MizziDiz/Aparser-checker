@@ -68,7 +68,9 @@ def load_config() -> dict:
     for k in ("error_threshold", "cooldown_hours", "min_requests", "request_timeout"):
         cfg[k] = float(cfg[k]) if k == "error_threshold" else int(float(cfg[k]))
 
-    missing = [k for k in ("aparser_password", "telegram_bot_token", "telegram_chat_id") if not cfg[k]]
+    # aparser_password не обязателен: если API A-Parser настроен без пароля,
+    # в запрос уходит пустая строка — это валидно.
+    missing = [k for k in ("telegram_bot_token", "telegram_chat_id") if not cfg[k]]
     if missing:
         sys.exit(f"Не заданы обязательные параметры: {', '.join(missing)}. "
                  f"Заполните {CONFIG_PATH.name} или переменные окружения.")

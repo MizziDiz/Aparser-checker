@@ -11,7 +11,7 @@
 ## Настройка
 
 1. Создайте Telegram-бота у [@BotFather](https://t.me/BotFather) → получите `bot_token`. Узнать `chat_id`: напишите боту, затем откройте `https://api.telegram.org/bot<TOKEN>/getUpdates` и возьмите `chat.id`.
-2. В A-Parser включите API и задайте пароль (Настройки → API), запомните порт (по умолчанию `9091`).
+2. В A-Parser включите API (Настройки → API), запомните порт (по умолчанию `9091`). Пароль опционален — если API без пароля, оставьте `aparser_password` пустым (`""`).
 3. Скопируйте `aparser_monitor.config.example.json` → `aparser_monitor.config.json` и заполните `aparser_password`, `telegram_bot_token`, `telegram_chat_id`, `aparser_url`. Либо задайте те же значения переменными окружения (`APARSER_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `APARSER_URL`) — они имеют приоритет над файлом.
 
 ## Запуск
