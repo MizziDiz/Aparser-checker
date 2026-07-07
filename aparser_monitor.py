@@ -248,18 +248,34 @@ def process(cfg: dict, state: dict) -> None:
     prune_state(state, cfg["cooldown_hours"])
 
 
+def describe_failure(cfg: dict, err: Exception) -> str:
+    """Человекочитаемое сообщение с разбором причины сбоя."""
+    if isinstance(err, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+        # реальная недоступность: сервер не принял соединение / не ответил вовремя
+        return (f"🔴 <b>A-Parser недоступен</b>\n{cfg['aparser_url']}\n"
+                f"Нет соединения: {type(err).__name__}")
+    if isinstance(err, requests.exceptions.HTTPError):
+        code = err.response.status_code if err.response is not None else "?"
+        hint = ("проверьте порт и путь /API, включён ли API в настройках A-Parser"
+                if code in (404, 405) else
+                "проверьте пароль API (`aparser_password`)" if code in (401, 403) else
+                "смотрите ответ сервера")
+        return (f"🟠 <b>A-Parser API: ошибка HTTP {code}</b>\n{cfg['aparser_url']}\n"
+                f"Это не обрыв связи — сервер ответил. {hint}.")
+    if isinstance(err, ValueError):  # тело ответа — не JSON
+        return (f"🟠 <b>A-Parser API: неожиданный ответ</b>\n{cfg['aparser_url']}\n"
+                f"Ответ не является JSON — верный ли это адрес API?")
+    # RuntimeError: API вернул success=0 и текст ошибки
+    return f"🟠 <b>A-Parser API вернул ошибку</b>\n{cfg['aparser_url']}\n{err}"
+
+
 def handle_unavailable(cfg: dict, state: dict, err: Exception) -> None:
-    """A-Parser не ответил: тревога (с кулдауном) и отметка, что он «лежит»."""
+    """A-Parser не ответил или ответил ошибкой: тревога (с кулдауном) и отметка «лежит»."""
     was_down = state.get("down", False)
     key = "down:global"
-    # Шлём сразу при первом падении, дальше — не чаще кулдауна.
+    # Шлём сразу при первом сбое, дальше — не чаще кулдауна.
     if not was_down or cooldown_ok(state, key, cfg["cooldown_hours"]):
-        send_telegram(
-            cfg,
-            f"🔴 <b>A-Parser недоступен</b>\n"
-            f"{cfg['aparser_url']}\n"
-            f"Причина: {type(err).__name__}: {err}",
-        )
+        send_telegram(cfg, describe_failure(cfg, err))
         mark_sent(state, key)
     state["down"] = True
     print(f"[down] {type(err).__name__}: {err}", file=sys.stderr)
