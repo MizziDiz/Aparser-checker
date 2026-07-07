@@ -82,6 +82,17 @@ CARDS_JS = r"""
   return cards;
 }
 """
+# Живые поля State в карточке сначала рендерятся плейсхолдером «Display Field» и
+# заполняются реальными данными на следующем тике обновления A-Parser. Ждём, пока
+# плейсхолдеры не исчезнут, иначе прочитаем пустые значения.
+PLACEHOLDER = "Display Field"
+CARDS_READY_JS = r"""
+() => {
+  const vals = [...document.querySelectorAll('.x-form-display-field')]
+    .map(e => (e.innerText || '').trim());
+  return vals.length === 0 || !vals.some(v => v === 'Display Field');
+}
+"""
 
 
 def load_ui_config() -> dict:
@@ -120,18 +131,29 @@ def open_ui(pw, cfg, headless: bool = True):
 # --------------------------------------------------------------------------- #
 def _card_from_raw(raw: dict) -> dict:
     f = raw.get("fields", {})
-    fm = FAILED_PCT_RE.search(f.get("Failed queries:", ""))
-    dm = FIRST_INT_RE.search(f.get("Queries done/all:", ""))
+    # незаполненные живые поля приходят плейсхолдером — считаем их пустыми
+    get = lambda k: ("" if f.get(k, "") == PLACEHOLDER else f.get(k, ""))
+    fm = FAILED_PCT_RE.search(get("Failed queries:"))
+    dm = FIRST_INT_RE.search(get("Queries done/all:"))
     return {
         "title": raw.get("title", "?"),
         "failed_pct": float(fm.group(1)) if fm else None,
         "done": int(dm.group(1)) if dm else 0,
-        "status": f.get("Status:", "").strip(),
+        "status": get("Status:").strip(),
     }
 
 
 def extract_cards(page) -> list[dict]:
     return [_card_from_raw(c) for c in page.evaluate(CARDS_JS)]
+
+
+def wait_cards_ready(page, timeout: int = 12000) -> None:
+    """Ждёт, пока живые поля карточек заполнятся (исчезнет плейсхолдер «Display Field»).
+    По таймауту не падает — читаем что успело прогрузиться."""
+    try:
+        page.wait_for_function(CARDS_READY_JS, timeout=timeout)
+    except Exception:
+        pass
 
 
 def active_count(cards: list[dict]) -> int:
@@ -144,12 +166,11 @@ def collect_cards(page, max_pages: int = 25) -> list[dict]:
     Стоп — когда следующая страница не даёт новых заданий (последняя)."""
     try:
         page.get_by_text("Tasks Queue", exact=True).first.click(timeout=5000)
-        page.wait_for_timeout(1200)
     except Exception:
         pass
     cards, seen, prev_titles = [], set(), None
     for _ in range(max_pages):
-        page.wait_for_timeout(700)
+        wait_cards_ready(page)         # дождаться заполнения живых полей
         titles = []
         for c in extract_cards(page):
             titles.append(c["title"])
@@ -271,9 +292,9 @@ def dump(cfg) -> None:
         browser, page = open_ui(pw, cfg)
         try:
             page.get_by_text("Tasks Queue", exact=True).first.click(timeout=5000)
-            page.wait_for_timeout(1500)
         except Exception:
             pass
+        wait_cards_ready(page)
         out_html.write_text(page.content(), encoding="utf-8")
         page.screenshot(path=str(out_png), full_page=True)
         raw = page.evaluate(CARDS_JS)
