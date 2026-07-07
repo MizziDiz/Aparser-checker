@@ -21,9 +21,11 @@ aparser_monitor.py — уведомления в Telegram о состоянии 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import requests
@@ -31,6 +33,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = HERE / "aparser_monitor.config.json"
 STATE_PATH = HERE / "aparser_monitor.state.json"
+LOG_PATH = HERE / "aparser_monitor.log"
 
 DEFAULTS = {
     # http://IP:PORT/API — адрес API A-Parser (порт по умолчанию 9091)
@@ -42,7 +45,36 @@ DEFAULTS = {
     "cooldown_hours": 8,      # кулдаун на повторные уведомления одного типа/задания
     "min_requests": 20,       # не тревожим по проценту, пока запросов меньше этого
     "request_timeout": 30,
+    "heartbeat_every": 12,    # раз в N успешных прогонов слать «всё ок» (0 — выключить)
 }
+
+
+# --------------------------------------------------------------------------- #
+# Логирование и heartbeat
+# --------------------------------------------------------------------------- #
+def get_logger() -> logging.Logger:
+    """Логгер: файл с ротацией (aparser_monitor.log) + вывод в консоль."""
+    logger = logging.getLogger("aparser_monitor")
+    if logger.handlers:            # уже настроен (напр. другим модулем)
+        return logger
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S")
+    fh = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+    return logger
+
+
+def maybe_heartbeat(cfg: dict, state: dict, summary: str) -> None:
+    """Раз в cfg['heartbeat_every'] успешных прогонов шлёт в Telegram «всё ок».
+    Вызывать только по итогу УСПЕШНОГО прогона (интерфейс/API доступны)."""
+    every = int(cfg.get("heartbeat_every", 0) or 0)
+    state["run_count"] = state.get("run_count", 0) + 1
+    if every > 0 and state["run_count"] % every == 0:
+        send_telegram(cfg, f"🟢 <b>A-Parser мониторинг: всё ок</b>\n{summary}")
 
 
 # --------------------------------------------------------------------------- #
@@ -65,7 +97,8 @@ def load_config() -> dict:
         if os.environ.get(env_key):
             cfg[cfg_key] = os.environ[env_key]
     # приведение типов для числовых параметров
-    for k in ("error_threshold", "cooldown_hours", "min_requests", "request_timeout"):
+    for k in ("error_threshold", "cooldown_hours", "min_requests", "request_timeout",
+              "heartbeat_every"):
         cfg[k] = float(cfg[k]) if k == "error_threshold" else int(float(cfg[k]))
 
     # aparser_password не обязателен: если API A-Parser настроен без пароля,
@@ -193,7 +226,7 @@ def task_name(task: dict, state: dict) -> str:
                or task.get("uniquename") or task_uid(task))
 
 
-def process(cfg: dict, state: dict) -> None:
+def process(cfg: dict, state: dict) -> str:
     tasks: list[dict] = []
     # активные и завершённые задания
     for completed_flag in (0, 1):
@@ -201,6 +234,7 @@ def process(cfg: dict, state: dict) -> None:
         if isinstance(data, list):
             tasks.extend(data)
 
+    over = 0
     for task in tasks:
         uid = task_uid(task)
         try:
@@ -220,6 +254,7 @@ def process(cfg: dict, state: dict) -> None:
         if total >= cfg["min_requests"]:
             rate = bad / total
             if rate >= cfg["error_threshold"]:
+                over += 1
                 key = f"errors:{uid}"
                 if cooldown_ok(state, key, cfg["cooldown_hours"]):
                     send_telegram(
@@ -246,6 +281,7 @@ def process(cfg: dict, state: dict) -> None:
                 print(f"[done] {uid}")
 
     prune_state(state, cfg["cooldown_hours"])
+    return f"заданий {len(tasks)}, с ошибками>{cfg['error_threshold']:.0%}: {over}"
 
 
 def describe_failure(cfg: dict, err: Exception) -> str:
@@ -291,15 +327,19 @@ def handle_recovered(cfg: dict, state: dict) -> None:
 
 def main() -> int:
     cfg = load_config()
+    log = get_logger()
     state = load_state()
     try:
         try:
-            process(cfg, state)
+            summary = process(cfg, state)
         except (requests.exceptions.RequestException, RuntimeError, ValueError) as e:
             # сеть/таймаут/HTTP-ошибка/невалидный ответ API — считаем недоступностью
             handle_unavailable(cfg, state, e)
+            log.warning(f"NOT OK — {type(e).__name__}: {e}")
         else:
             handle_recovered(cfg, state)
+            log.info(f"OK — {summary}")
+            maybe_heartbeat(cfg, state, summary)
     finally:
         save_state(state)
     return 0

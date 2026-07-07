@@ -1,6 +1,7 @@
-# локальные секреты и состояние — не коммитить
+# локальные секреты, состояние, логи — не коммитить
 aparser_monitor.config.json
 aparser_monitor.state.json
+aparser_monitor.log*
 
 # дампы web-интерфейса (могут содержать ваши данные заданий)
 ui_dumps/

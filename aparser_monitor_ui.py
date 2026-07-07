@@ -45,10 +45,11 @@ import sys
 import time
 from pathlib import Path
 
-# переиспользуем конфиг/состояние/кулдаун/Telegram из основного скрипта
+# переиспользуем конфиг/состояние/кулдаун/Telegram/логи из основного скрипта
 from aparser_monitor import (
     CONFIG_PATH, DEFAULTS, load_state, save_state,
     send_telegram, cooldown_ok, mark_sent, prune_state,
+    get_logger, maybe_heartbeat,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -103,6 +104,7 @@ def load_ui_config() -> dict:
     cfg["cooldown_hours"] = int(float(cfg["cooldown_hours"]))
     cfg["error_threshold"] = float(cfg["error_threshold"])
     cfg["min_requests"] = int(float(cfg["min_requests"]))
+    cfg["heartbeat_every"] = int(float(cfg.get("heartbeat_every", 0)))
     for k in ("telegram_bot_token", "telegram_chat_id"):
         if not cfg.get(k):
             sys.exit(f"Не задан обязательный параметр: {k}. Заполните {CONFIG_PATH.name}.")
@@ -211,13 +213,16 @@ def notify_completion(cfg, state, active: int, total: int) -> None:
     print(f"[ok] active={active}/{total} prev={prev}")
 
 
-def notify_errors(cfg, state, cards: list[dict]) -> None:
-    """Тревога по карточкам, где доля ошибок >= порога (и обработано >= min_requests)."""
+def notify_errors(cfg, state, cards: list[dict]) -> int:
+    """Тревога по карточкам, где доля ошибок >= порога (и обработано >= min_requests).
+    Возвращает число заданий, превысивших порог (для сводки в лог)."""
     threshold_pct = cfg["error_threshold"] * 100
+    over = 0
     for c in cards:
         if c["failed_pct"] is None or c["done"] < cfg["min_requests"]:
             continue
         if c["failed_pct"] >= threshold_pct:
+            over += 1
             key = f"errors:{c['title']}"
             if cooldown_ok(state, key, cfg["cooldown_hours"]):
                 send_telegram(
@@ -227,7 +232,7 @@ def notify_errors(cfg, state, cards: list[dict]) -> None:
                     f"Ошибок: <b>{c['failed_pct']:.1f}%</b> при {c['done']} обработанных запросах",
                 )
                 mark_sent(state, key)
-                print(f"[alert] {c['title']} failed={c['failed_pct']}%")
+    return over
 
 
 def handle_ui_down(cfg, state, err) -> None:
@@ -241,7 +246,7 @@ def handle_ui_down(cfg, state, err) -> None:
     print(f"[down] {type(err).__name__}: {err}", file=sys.stderr)
 
 
-def run(cfg, state) -> None:
+def run(cfg, state) -> str:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg)
@@ -252,8 +257,10 @@ def run(cfg, state) -> None:
     if state.get("down"):
         send_telegram(cfg, f"🟢 <b>A-Parser: интерфейс снова доступен</b>\n{cfg['aparser_ui_url']}")
     state["down"] = False
-    notify_completion(cfg, state, active_count(cards), len(cards))
-    notify_errors(cfg, state, cards)
+    active = active_count(cards)
+    notify_completion(cfg, state, active, len(cards))
+    over = notify_errors(cfg, state, cards)
+    return f"заданий {len(cards)}, активных {active}, с ошибками>{cfg['error_threshold']:.0%}: {over}"
 
 
 # --------------------------------------------------------------------------- #
@@ -383,12 +390,17 @@ def main() -> int:
     if "--check" in sys.argv:
         check(cfg)
         return 0
+    log = get_logger()
     state = load_state()
     try:
         try:
-            run(cfg, state)
+            summary = run(cfg, state)
         except Exception as e:  # недоступность интерфейса/таймаут/сбой браузера/логина
             handle_ui_down(cfg, state, e)
+            log.warning(f"NOT OK — {type(e).__name__}: {e}")
+        else:
+            log.info(f"OK — {summary}")
+            maybe_heartbeat(cfg, state, summary)
     finally:
         save_state(state)
     return 0
