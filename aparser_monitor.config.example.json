@@ -7,6 +7,7 @@
 
   "telegram_bot_token": "123456:ABC-ВАШ_ТОКЕН_БОТА",
   "telegram_chat_id": "ВАШ_CHAT_ID",
+  "telegram_proxy": "",
 
   "error_threshold": 0.5,
   "cooldown_hours": 8,

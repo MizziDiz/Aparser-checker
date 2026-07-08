@@ -42,6 +42,8 @@ DEFAULTS = {
     "aparser_password": "",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
+    "telegram_proxy": "",     # прокси для Telegram, если api.telegram.org недоступен напрямую
+                              # напр. "socks5://user:pass@host:1080" или "http://host:3128"
     "error_threshold": 0.5,   # доля ошибок, при которой шлём тревогу (0.5 = 50%)
     "cooldown_hours": 8,      # кулдаун на повторные уведомления одного типа/задания
     "min_requests": 20,       # не тревожим по проценту, пока запросов меньше этого
@@ -267,6 +269,12 @@ def is_completed(state: dict) -> bool:
 # --------------------------------------------------------------------------- #
 # Telegram
 # --------------------------------------------------------------------------- #
+def _telegram_proxies(cfg: dict):
+    """proxies для requests, если задан telegram_proxy (иначе None — прямое соединение)."""
+    p = cfg.get("telegram_proxy", "")
+    return {"http": p, "https": p} if p else None
+
+
 def send_telegram(cfg: dict, text: str) -> bool:
     """Отправка в Telegram. Ошибки Telegram НЕ пробрасываем наружу, иначе они
     были бы приняты за недоступность A-Parser; просто логируем и возвращаем False."""
@@ -277,6 +285,7 @@ def send_telegram(cfg: dict, text: str) -> bool:
             json={"chat_id": cfg["telegram_chat_id"], "text": text, "parse_mode": "HTML",
                   "disable_web_page_preview": True},
             timeout=cfg["request_timeout"],
+            proxies=_telegram_proxies(cfg),
         )
         resp.raise_for_status()
         return True
@@ -288,8 +297,10 @@ def send_telegram(cfg: dict, text: str) -> bool:
 def test_telegram(cfg: dict) -> int:
     """Дебаг-команда (--test-telegram): шлёт тестовое сообщение и печатает подробный
     результат — HTTP-код и ответ Telegram, чтобы отличить проблему токена/chat_id/сети."""
+    proxy = cfg.get("telegram_proxy", "")
     print(f"chat_id={cfg['telegram_chat_id']!r}, "
-          f"token=…{str(cfg['telegram_bot_token'])[-6:]} (последние 6 символов)")
+          f"token=…{str(cfg['telegram_bot_token'])[-6:]} (последние 6 символов), "
+          f"proxy={proxy or 'нет (прямое соединение)'}")
     url = f"https://api.telegram.org/bot{cfg['telegram_bot_token']}/sendMessage"
     try:
         r = requests.post(
@@ -298,6 +309,7 @@ def test_telegram(cfg: dict) -> int:
                   "text": "✅ aparser_monitor: проверка связи с ботом",
                   "parse_mode": "HTML"},
             timeout=cfg.get("request_timeout", 30),
+            proxies=_telegram_proxies(cfg),
         )
         ok = r.status_code == 200 and r.json().get("ok", False)
         if ok:
@@ -308,8 +320,10 @@ def test_telegram(cfg: dict) -> int:
               "chat_id или боту не писали /start; 403 — бот заблокирован в чате.")
         return 1
     except requests.exceptions.RequestException as e:
-        print(f"ОШИБКА сети/таймаута: {type(e).__name__}: {e}. "
-              f"Проверьте доступ к api.telegram.org:443 с этого сервера.")
+        print(f"ОШИБКА сети/таймаута: {type(e).__name__}: {e}.")
+        print("api.telegram.org недоступен напрямую (частая ситуация на RU-серверах). "
+              "Задайте прокси в конфиге: \"telegram_proxy\": \"socks5://host:1080\" "
+              "(для socks нужен: py -m pip install pysocks) или \"http://host:3128\".")
         return 1
 
 
