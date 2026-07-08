@@ -107,6 +107,20 @@ schtasks /Create /SC MINUTE /MO 5 /TN "aparser-monitor-ui" ^
 
 Пусто в любом из трёх путей → Autosend выключен. `autosend_dest` обычно UNC — у пользователя задачи должен быть доступ к шаре. Autosend выполняется каждый прогон и **не зависит** от доступности A-Parser.
 
+## Редактор настроек (десктоп, .exe)
+
+Вместо ручной правки JSON есть графический редактор конфига — `aparser_config_gui.py` (Tkinter, без внешних зависимостей). Форма строится по единой схеме `aparser_config_schema.py`, которую позже можно переиспользовать и для веб-интерфейса.
+
+Запуск как скрипт:
+```
+py aparser_config_gui.py
+```
+Сборка в один .exe (Windows):
+```
+build-config-exe.bat        # ставит PyInstaller и собирает dist\aparser-config.exe
+```
+Положите `aparser-config.exe` в ту же папку, что и `aparser_monitor_ui.py` (напр. `C:\Monitor`) — он читает/пишет `aparser_monitor.config.json` рядом с собой. Кнопка «Проверить Telegram» шлёт тестовое сообщение с текущими значениями формы (учитывает прокси/релей).
+
 ## Дебаг (обе версии)
 
 Подробные логи включаются флагом **`--debug`** или `"debug": true` в конфиге (по умолчанию выключено):

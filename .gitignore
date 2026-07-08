@@ -12,3 +12,8 @@ ui_dump.png
 # кэш Python
 __pycache__/
 *.pyc
+
+# сборка PyInstaller (редактор настроек)
+build/
+dist/
+*.spec
