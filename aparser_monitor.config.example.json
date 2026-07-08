@@ -20,5 +20,8 @@
   "queries_dir": "C:\\A-Parser\\files\\queries",
   "results_dir": "C:\\A-Parser\\files\\results",
   "autosend_dest": "\\\\SERVER2\\share\\incoming",
-  "autosend_settle_min": 2
+  "autosend_settle_min": 2,
+  "autosend_cleanup_min": 1440,
+
+  "debug": false
 }

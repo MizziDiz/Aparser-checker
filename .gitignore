@@ -2,6 +2,7 @@
 aparser_monitor.config.json
 aparser_monitor.state.json
 aparser_monitor.log*
+aparser_sent.jsonl
 
 # дампы web-интерфейса (могут содержать ваши данные заданий)
 ui_dumps/

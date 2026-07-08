@@ -54,30 +54,41 @@ DEFAULTS = {
     "restart_cooldown_min": 15,   # не перезапускать чаще, чем раз в N минут
 
     # Autosend: копирование готовых результатов на другой сервер (пусто — выключено)
-    "queries_dir": "",            # raw-путь к папке Queries A-Parser
-    "results_dir": "",            # raw-путь к папке results A-Parser
+    "queries_dir": "",            # raw-путь к папке Queries A-Parser (ищем рекурсивно)
+    "results_dir": "",            # raw-путь к папке results A-Parser (ищем рекурсивно)
     "autosend_dest": "",          # raw UNC-путь назначения, напр. r"\\SERVER\share\in"
-    "autosend_settle_min": 2,     # файл готов, если не менялся N минут
+    "autosend_settle_min": 2,     # результат готов к отправке, если не менялся N минут
+    "autosend_cleanup_min": 1440, # после N минут без изменений: отправить (если нет) и удалить
+
+    "debug": False,               # подробные дебаг-логи (можно и флагом --debug)
 }
 
 
 # --------------------------------------------------------------------------- #
 # Логирование и heartbeat
 # --------------------------------------------------------------------------- #
-def get_logger() -> logging.Logger:
-    """Логгер: файл с ротацией (aparser_monitor.log) + вывод в консоль."""
+def get_logger(debug: bool | None = None) -> logging.Logger:
+    """Логгер: файл с ротацией (aparser_monitor.log) + вывод в консоль.
+    debug=True включает уровень DEBUG (подробные логи), False — INFO. None не
+    меняет уровень (для вызовов из вспомогательного кода)."""
     logger = logging.getLogger("aparser_monitor")
-    if logger.handlers:            # уже настроен (напр. другим модулем)
-        return logger
-    logger.setLevel(logging.INFO)
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S")
-    fh = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
-    fh.setFormatter(fmt)
-    logger.addHandler(fh)
-    sh = logging.StreamHandler()
-    sh.setFormatter(fmt)
-    logger.addHandler(sh)
+    if not logger.handlers:        # ещё не настроен
+        logger.setLevel(logging.INFO)
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S")
+        fh = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+        sh = logging.StreamHandler()
+        sh.setFormatter(fmt)
+        logger.addHandler(sh)
+    if debug is not None:
+        logger.setLevel(logging.DEBUG if debug else logging.INFO)
     return logger
+
+
+def want_debug(cfg: dict) -> bool:
+    """Дебаг включён, если --debug в аргументах или "debug": true в конфиге."""
+    return ("--debug" in sys.argv) or bool(cfg.get("debug", False))
 
 
 def maybe_heartbeat(cfg: dict, state: dict, summary: str) -> None:
@@ -412,7 +423,7 @@ def handle_recovered(cfg: dict, state: dict) -> None:
 
 def main() -> int:
     cfg = load_config()
-    log = get_logger()
+    log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
     state = load_state()
     try:
         try:
