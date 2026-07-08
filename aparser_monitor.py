@@ -45,7 +45,7 @@ DEFAULTS = {
     "cooldown_hours": 8,      # кулдаун на повторные уведомления одного типа/задания
     "min_requests": 20,       # не тревожим по проценту, пока запросов меньше этого
     "request_timeout": 30,
-    "heartbeat_every": 12,    # раз в N успешных прогонов слать «всё ок» (0 — выключить)
+    "heartbeat_hours": 6,     # слать «всё ок» не чаще раза в N часов (0 — выключить)
 }
 
 
@@ -69,21 +69,41 @@ def get_logger() -> logging.Logger:
 
 
 def maybe_heartbeat(cfg: dict, state: dict, summary: str) -> None:
-    """Раз в cfg['heartbeat_every'] успешных прогонов шлёт в Telegram «всё ок».
-    Вызывать только по итогу УСПЕШНОГО прогона (интерфейс/API доступны)."""
-    every = int(cfg.get("heartbeat_every", 0) or 0)
-    state["run_count"] = state.get("run_count", 0) + 1
-    if every > 0 and state["run_count"] % every == 0:
+    """Шлёт в Telegram «всё ок» не чаще раза в cfg['heartbeat_hours'] (0 — выключено).
+    Опирается на отметку времени в state — если state.json не сохраняется, heartbeat
+    не отправится (безопасный отказ вместо спама), а save_state залогирует проблему.
+    Вызывать только по итогу УСПЕШНОГО прогона."""
+    hours = float(cfg.get("heartbeat_hours", 0) or 0)
+    if hours <= 0:
+        return
+    now = time.time()
+    last = state.get("heartbeat_ts")
+    if last is not None and (now - last) < hours * 3600:
+        return                                  # ещё рано
+    if last is not None:                        # первый прогон только ставит отметку
         send_telegram(cfg, f"🟢 <b>A-Parser мониторинг: всё ок</b>\n{summary}")
+        get_logger().info(f"heartbeat отправлен — {summary}")
+    state["heartbeat_ts"] = now
 
 
 # --------------------------------------------------------------------------- #
 # Конфиг и состояние
 # --------------------------------------------------------------------------- #
+def read_config_file() -> dict:
+    """Читает aparser_monitor.config.json, при кривом JSON — понятная ошибка."""
+    if not CONFIG_PATH.exists():
+        return {}
+    try:
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        sys.exit(f"Ошибка в {CONFIG_PATH.name}: некорректный JSON — {e.msg} "
+                 f"(строка {e.lineno}, символ {e.colno}). Проверьте запятые/кавычки; "
+                 f"комментарии в JSON не допускаются.")
+
+
 def load_config() -> dict:
     cfg = dict(DEFAULTS)
-    if CONFIG_PATH.exists():
-        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+    cfg.update(read_config_file())
     # переменные окружения имеют приоритет над файлом
     env_map = {
         "APARSER_URL": "aparser_url",
@@ -97,9 +117,10 @@ def load_config() -> dict:
         if os.environ.get(env_key):
             cfg[cfg_key] = os.environ[env_key]
     # приведение типов для числовых параметров
-    for k in ("error_threshold", "cooldown_hours", "min_requests", "request_timeout",
-              "heartbeat_every"):
-        cfg[k] = float(cfg[k]) if k == "error_threshold" else int(float(cfg[k]))
+    cfg["error_threshold"] = float(cfg["error_threshold"])
+    cfg["heartbeat_hours"] = float(cfg.get("heartbeat_hours", 0) or 0)
+    for k in ("cooldown_hours", "min_requests", "request_timeout"):
+        cfg[k] = int(float(cfg[k]))
 
     # aparser_password не обязателен: если API A-Parser настроен без пароля,
     # в запрос уходит пустая строка — это валидно.
@@ -120,7 +141,12 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as e:
+        # если состояние не пишется — не работают heartbeat, кулдаун и детект завершения
+        get_logger().error(f"Не удалось сохранить {STATE_PATH.name}: {e}. "
+                           f"Проверьте права на запись в каталог скрипта.")
 
 
 # --------------------------------------------------------------------------- #

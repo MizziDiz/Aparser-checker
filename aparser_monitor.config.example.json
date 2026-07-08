@@ -11,5 +11,5 @@
   "error_threshold": 0.5,
   "cooldown_hours": 8,
   "min_requests": 20,
-  "heartbeat_every": 12
+  "heartbeat_hours": 6
 }

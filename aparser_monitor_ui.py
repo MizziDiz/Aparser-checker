@@ -47,7 +47,7 @@ from pathlib import Path
 
 # переиспользуем конфиг/состояние/кулдаун/Telegram/логи из основного скрипта
 from aparser_monitor import (
-    CONFIG_PATH, DEFAULTS, load_state, save_state,
+    CONFIG_PATH, DEFAULTS, load_state, save_state, read_config_file,
     send_telegram, cooldown_ok, mark_sent, prune_state,
     get_logger, maybe_heartbeat,
 )
@@ -99,12 +99,11 @@ CARDS_READY_JS = r"""
 def load_ui_config() -> dict:
     cfg = dict(DEFAULTS)
     cfg.update({"aparser_ui_url": "http://127.0.0.1:9091/", "aparser_ui_password": ""})
-    if CONFIG_PATH.exists():
-        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+    cfg.update(read_config_file())
     cfg["cooldown_hours"] = int(float(cfg["cooldown_hours"]))
     cfg["error_threshold"] = float(cfg["error_threshold"])
     cfg["min_requests"] = int(float(cfg["min_requests"]))
-    cfg["heartbeat_every"] = int(float(cfg.get("heartbeat_every", 0)))
+    cfg["heartbeat_hours"] = float(cfg.get("heartbeat_hours", 0) or 0)
     for k in ("telegram_bot_token", "telegram_chat_id"):
         if not cfg.get(k):
             sys.exit(f"Не задан обязательный параметр: {k}. Заполните {CONFIG_PATH.name}.")
@@ -170,24 +169,31 @@ def collect_cards(page, max_pages: int = 25) -> list[dict]:
         page.get_by_text("Tasks Queue", exact=True).first.click(timeout=5000)
     except Exception:
         pass
-    cards, seen, prev_titles = [], set(), None
+    cards, seen = [], set()
     for _ in range(max_pages):
-        wait_cards_ready(page)         # дождаться заполнения живых полей
-        titles = []
-        for c in extract_cards(page):
-            titles.append(c["title"])
+        wait_cards_ready(page)                 # дождаться заполнения живых полей
+        cur = extract_cards(page)
+        titles = [c["title"] for c in cur]
+        for c in cur:
             if c["title"] not in seen:
                 seen.add(c["title"])
                 cards.append(c)
-        if titles == prev_titles:        # страница не сменилась → была последняя
-            break
-        prev_titles = titles
         nxt = page.query_selector(NEXT_PAGE)
         if not nxt:
             break
         try:
             nxt.click()
         except Exception:
+            break
+        # ждём, пока список заданий реально сменится; если не сменился —
+        # это была последняя страница (кнопка next неактивна)
+        changed = False
+        for _ in range(25):                    # до ~5 c
+            page.wait_for_timeout(200)
+            if [c["title"] for c in extract_cards(page)] != titles:
+                changed = True
+                break
+        if not changed:
             break
     return cards
 
