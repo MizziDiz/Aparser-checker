@@ -9,6 +9,11 @@
   "telegram_chat_id": "ВАШ_CHAT_ID",
   "telegram_proxy": "",
 
+  "telegram_relay_url": "",
+  "relay_secret": "",
+  "relay_port": 8899,
+  "relay_bind": "0.0.0.0",
+
   "error_threshold": 0.5,
   "cooldown_hours": 8,
   "min_requests": 20,

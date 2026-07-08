@@ -110,6 +110,7 @@ def load_ui_config() -> dict:
     cfg["error_threshold"] = float(cfg["error_threshold"])
     cfg["min_requests"] = int(float(cfg["min_requests"]))
     cfg["heartbeat_hours"] = float(cfg.get("heartbeat_hours", 0) or 0)
+    cfg["relay_port"] = int(float(cfg.get("relay_port", 8899) or 8899))
     for k in ("telegram_bot_token", "telegram_chat_id"):
         if not cfg.get(k):
             sys.exit(f"Не задан обязательный параметр: {k}. Заполните {CONFIG_PATH.name}.")
@@ -421,6 +422,9 @@ def main() -> int:
     log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
     if "--test-telegram" in sys.argv:
         return test_telegram(cfg)
+    if "--relay" in sys.argv:
+        from aparser_relay import run_relay
+        return run_relay(cfg, log)
     if "--interactive" in sys.argv or "-i" in sys.argv:
         interactive(cfg)
         return 0

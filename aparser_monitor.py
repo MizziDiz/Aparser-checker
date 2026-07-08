@@ -44,6 +44,13 @@ DEFAULTS = {
     "telegram_chat_id": "",
     "telegram_proxy": "",     # прокси для Telegram, если api.telegram.org недоступен напрямую
                               # напр. "socks5://user:pass@host:1080" или "http://host:3128"
+
+    # Релей: слать сообщения через другой сервер локальной сети, у которого есть
+    # доступ к Telegram (на нём запущен этот же скрипт в режиме --relay).
+    "telegram_relay_url": "", # на серверах-клиентах: URL релея, напр. "http://192.168.1.5:8899"
+    "relay_secret": "",       # общий секрет клиентов и релея (защита от посторонних)
+    "relay_port": 8899,       # на сервере-релее: порт прослушивания
+    "relay_bind": "0.0.0.0",  # на сервере-релее: адрес прослушивания
     "error_threshold": 0.5,   # доля ошибок, при которой шлём тревогу (0.5 = 50%)
     "cooldown_hours": 8,      # кулдаун на повторные уведомления одного типа/задания
     "min_requests": 20,       # не тревожим по проценту, пока запросов меньше этого
@@ -186,7 +193,7 @@ def load_config() -> dict:
     # приведение типов для числовых параметров
     cfg["error_threshold"] = float(cfg["error_threshold"])
     cfg["heartbeat_hours"] = float(cfg.get("heartbeat_hours", 0) or 0)
-    for k in ("cooldown_hours", "min_requests", "request_timeout"):
+    for k in ("cooldown_hours", "min_requests", "request_timeout", "relay_port"):
         cfg[k] = int(float(cfg[k]))
 
     # aparser_password не обязателен: если API A-Parser настроен без пароля,
@@ -275,28 +282,63 @@ def _telegram_proxies(cfg: dict):
     return {"http": p, "https": p} if p else None
 
 
-def send_telegram(cfg: dict, text: str) -> bool:
-    """Отправка в Telegram. Ошибки Telegram НЕ пробрасываем наружу, иначе они
-    были бы приняты за недоступность A-Parser; просто логируем и возвращаем False."""
+def send_telegram_direct(cfg: dict, text: str) -> None:
+    """Прямая отправка в Telegram (с учётом telegram_proxy). Бросает исключение при
+    ошибке — используется и на релее. Не проходит через telegram_relay_url."""
     url = f"https://api.telegram.org/bot{cfg['telegram_bot_token']}/sendMessage"
+    resp = requests.post(
+        url,
+        json={"chat_id": cfg["telegram_chat_id"], "text": text, "parse_mode": "HTML",
+              "disable_web_page_preview": True},
+        timeout=cfg["request_timeout"],
+        proxies=_telegram_proxies(cfg),
+    )
+    resp.raise_for_status()
+
+
+def send_via_relay(cfg: dict, text: str) -> None:
+    """Отправка через сервер-релей локальной сети (telegram_relay_url). Бросает
+    исключение при ошибке."""
+    url = cfg["telegram_relay_url"].rstrip("/") + "/send"
+    resp = requests.post(
+        url,
+        json={"secret": cfg.get("relay_secret", ""), "text": text},
+        timeout=cfg["request_timeout"],
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if not body.get("ok"):
+        raise RuntimeError(f"релей вернул ошибку: {body}")
+
+
+def send_telegram(cfg: dict, text: str) -> bool:
+    """Отправка сообщения: напрямую или через релей (если задан telegram_relay_url).
+    Ошибки НЕ пробрасываем наружу (иначе примутся за недоступность A-Parser) —
+    логируем и возвращаем False."""
     try:
-        resp = requests.post(
-            url,
-            json={"chat_id": cfg["telegram_chat_id"], "text": text, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
-            timeout=cfg["request_timeout"],
-            proxies=_telegram_proxies(cfg),
-        )
-        resp.raise_for_status()
+        if cfg.get("telegram_relay_url"):
+            send_via_relay(cfg, text)
+        else:
+            send_telegram_direct(cfg, text)
         return True
-    except requests.exceptions.RequestException as e:
-        print(f"[warn] Telegram sendMessage не удался: {e}", file=sys.stderr)
+    except (requests.exceptions.RequestException, RuntimeError, ValueError) as e:
+        print(f"[warn] отправка в Telegram не удалась: {e}", file=sys.stderr)
         return False
 
 
 def test_telegram(cfg: dict) -> int:
     """Дебаг-команда (--test-telegram): шлёт тестовое сообщение и печатает подробный
     результат — HTTP-код и ответ Telegram, чтобы отличить проблему токена/chat_id/сети."""
+    relay = cfg.get("telegram_relay_url", "")
+    if relay:
+        print(f"через релей: {relay}")
+        ok = send_telegram(cfg, "✅ aparser_monitor: проверка связи через релей")
+        if ok:
+            print("OK — сообщение принято релеем и отправлено, проверьте чат.")
+            return 0
+        print("ОШИБКА: релей недоступен или отклонил запрос (проверьте telegram_relay_url, "
+              "relay_secret, что релей запущен и порт открыт в локальной сети).")
+        return 1
     proxy = cfg.get("telegram_proxy", "")
     print(f"chat_id={cfg['telegram_chat_id']!r}, "
           f"token=…{str(cfg['telegram_bot_token'])[-6:]} (последние 6 символов), "
@@ -468,6 +510,9 @@ def main() -> int:
     log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
     if "--test-telegram" in sys.argv:
         return test_telegram(cfg)
+    if "--relay" in sys.argv:
+        from aparser_relay import run_relay
+        return run_relay(cfg, log)
     state = load_state()
     try:
         try:
