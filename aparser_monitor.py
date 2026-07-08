@@ -285,6 +285,34 @@ def send_telegram(cfg: dict, text: str) -> bool:
         return False
 
 
+def test_telegram(cfg: dict) -> int:
+    """Дебаг-команда (--test-telegram): шлёт тестовое сообщение и печатает подробный
+    результат — HTTP-код и ответ Telegram, чтобы отличить проблему токена/chat_id/сети."""
+    print(f"chat_id={cfg['telegram_chat_id']!r}, "
+          f"token=…{str(cfg['telegram_bot_token'])[-6:]} (последние 6 символов)")
+    url = f"https://api.telegram.org/bot{cfg['telegram_bot_token']}/sendMessage"
+    try:
+        r = requests.post(
+            url,
+            json={"chat_id": cfg["telegram_chat_id"],
+                  "text": "✅ aparser_monitor: проверка связи с ботом",
+                  "parse_mode": "HTML"},
+            timeout=cfg.get("request_timeout", 30),
+        )
+        ok = r.status_code == 200 and r.json().get("ok", False)
+        if ok:
+            print("OK — тестовое сообщение отправлено, проверьте чат.")
+            return 0
+        print(f"ОШИБКА: HTTP {r.status_code}. Ответ Telegram: {r.text[:400]}")
+        print("Подсказки: 404 — неверный токен; 400 'chat not found' — неверный "
+              "chat_id или боту не писали /start; 403 — бот заблокирован в чате.")
+        return 1
+    except requests.exceptions.RequestException as e:
+        print(f"ОШИБКА сети/таймаута: {type(e).__name__}: {e}. "
+              f"Проверьте доступ к api.telegram.org:443 с этого сервера.")
+        return 1
+
+
 # --------------------------------------------------------------------------- #
 # Кулдаун
 # --------------------------------------------------------------------------- #
@@ -424,6 +452,8 @@ def handle_recovered(cfg: dict, state: dict) -> None:
 def main() -> int:
     cfg = load_config()
     log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
+    if "--test-telegram" in sys.argv:
+        return test_telegram(cfg)
     state = load_state()
     try:
         try:

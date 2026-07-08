@@ -50,7 +50,7 @@ from pathlib import Path
 from aparser_monitor import (
     CONFIG_PATH, DEFAULTS, load_state, save_state, read_config_file,
     send_telegram, cooldown_ok, mark_sent, prune_state,
-    get_logger, want_debug, maybe_heartbeat, maybe_restart,
+    get_logger, want_debug, maybe_heartbeat, maybe_restart, test_telegram,
 )
 from aparser_autosend import run_autosend
 
@@ -419,6 +419,8 @@ def interactive(cfg) -> None:
 def main() -> int:
     cfg = load_ui_config()
     log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
+    if "--test-telegram" in sys.argv:
+        return test_telegram(cfg)
     if "--interactive" in sys.argv or "-i" in sys.argv:
         interactive(cfg)
         return 0
