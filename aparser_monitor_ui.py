@@ -49,8 +49,9 @@ from pathlib import Path
 from aparser_monitor import (
     CONFIG_PATH, DEFAULTS, load_state, save_state, read_config_file,
     send_telegram, cooldown_ok, mark_sent, prune_state,
-    get_logger, maybe_heartbeat,
+    get_logger, maybe_heartbeat, maybe_restart,
 )
+from aparser_autosend import run_autosend
 
 HERE = Path(__file__).resolve().parent
 
@@ -241,7 +242,7 @@ def notify_errors(cfg, state, cards: list[dict]) -> int:
     return over
 
 
-def handle_ui_down(cfg, state, err) -> None:
+def handle_ui_down(cfg, state, err, logger) -> None:
     was_down = state.get("down", False)
     key = "down:global"
     if not was_down or cooldown_ok(state, key, cfg["cooldown_hours"]):
@@ -249,7 +250,8 @@ def handle_ui_down(cfg, state, err) -> None:
                            f"{type(err).__name__}: {err}")
         mark_sent(state, key)
     state["down"] = True
-    print(f"[down] {type(err).__name__}: {err}", file=sys.stderr)
+    state["down_count"] = state.get("down_count", 0) + 1
+    maybe_restart(cfg, state, logger)   # перезапуск A-Parser после серии недоступностей
 
 
 def run(cfg, state) -> str:
@@ -263,6 +265,7 @@ def run(cfg, state) -> str:
     if state.get("down"):
         send_telegram(cfg, f"🟢 <b>A-Parser: интерфейс снова доступен</b>\n{cfg['aparser_ui_url']}")
     state["down"] = False
+    state["down_count"] = 0
     active = active_count(cards)
     notify_completion(cfg, state, active, len(cards))
     over = notify_errors(cfg, state, cards)
@@ -402,11 +405,16 @@ def main() -> int:
         try:
             summary = run(cfg, state)
         except Exception as e:  # недоступность интерфейса/таймаут/сбой браузера/логина
-            handle_ui_down(cfg, state, e)
+            handle_ui_down(cfg, state, e, log)
             log.warning(f"NOT OK — {type(e).__name__}: {e}")
         else:
             log.info(f"OK — {summary}")
             maybe_heartbeat(cfg, state, summary)
+        # Autosend не зависит от доступности A-Parser — файловая операция
+        try:
+            run_autosend(cfg, state, log)
+        except Exception as e:
+            log.error(f"autosend упал: {type(e).__name__}: {e}")
     finally:
         save_state(state)
     return 0

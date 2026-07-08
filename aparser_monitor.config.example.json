@@ -1,9 +1,9 @@
 {
-  "aparser_url": "http://127.0.0.1:9091/API",
-  "aparser_password": "ВАШ_ПАРОЛЬ_ОТ_API_A-PARSER",
-
   "aparser_ui_url": "http://127.0.0.1:9092/",
   "aparser_ui_password": "ВАШ_ПАРОЛЬ_ОТ_WEB-ИНТЕРФЕЙСА",
+
+  "aparser_url": "http://127.0.0.1:9091/API",
+  "aparser_password": "ВАШ_ПАРОЛЬ_ОТ_API_A-PARSER",
 
   "telegram_bot_token": "123456:ABC-ВАШ_ТОКЕН_БОТА",
   "telegram_chat_id": "ВАШ_CHAT_ID",
@@ -11,5 +11,14 @@
   "error_threshold": 0.5,
   "cooldown_hours": 8,
   "min_requests": 20,
-  "heartbeat_hours": 6
+  "heartbeat_hours": 6,
+
+  "aparser_exe_path": "C:\\A-Parser\\aparser.exe",
+  "restart_after_failures": 3,
+  "restart_cooldown_min": 15,
+
+  "queries_dir": "C:\\A-Parser\\files\\queries",
+  "results_dir": "C:\\A-Parser\\files\\results",
+  "autosend_dest": "\\\\SERVER2\\share\\incoming",
+  "autosend_settle_min": 2
 }

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from logging.handlers import RotatingFileHandler
@@ -46,6 +47,17 @@ DEFAULTS = {
     "min_requests": 20,       # не тревожим по проценту, пока запросов меньше этого
     "request_timeout": 30,
     "heartbeat_hours": 6,     # слать «всё ок» не чаще раза в N часов (0 — выключить)
+
+    # Перезапуск A-Parser при недоступности (пусто/0 — выключено)
+    "aparser_exe_path": "",       # raw-путь к exe A-Parser, напр. r"C:\A-Parser\aparser.exe"
+    "restart_after_failures": 3,  # столько недоступностей подряд до перезапуска
+    "restart_cooldown_min": 15,   # не перезапускать чаще, чем раз в N минут
+
+    # Autosend: копирование готовых результатов на другой сервер (пусто — выключено)
+    "queries_dir": "",            # raw-путь к папке Queries A-Parser
+    "results_dir": "",            # raw-путь к папке results A-Parser
+    "autosend_dest": "",          # raw UNC-путь назначения, напр. r"\\SERVER\share\in"
+    "autosend_settle_min": 2,     # файл готов, если не менялся N минут
 }
 
 
@@ -84,6 +96,48 @@ def maybe_heartbeat(cfg: dict, state: dict, summary: str) -> None:
         send_telegram(cfg, f"🟢 <b>A-Parser мониторинг: всё ок</b>\n{summary}")
         get_logger().info(f"heartbeat отправлен — {summary}")
     state["heartbeat_ts"] = now
+
+
+# --------------------------------------------------------------------------- #
+# Перезапуск A-Parser (при недоступности)
+# --------------------------------------------------------------------------- #
+def _restart_aparser(cfg: dict, logger: logging.Logger) -> bool:
+    """Завершает процесс A-Parser по имени exe из конфига и запускает его заново."""
+    exe = Path(cfg.get("aparser_exe_path", ""))
+    try:
+        # /T — вместе с дочерними процессами; отсутствие процесса не считаем ошибкой
+        subprocess.run(["taskkill", "/F", "/T", "/IM", exe.name],
+                       capture_output=True, timeout=30)
+    except Exception as e:
+        logger.warning(f"taskkill {exe.name}: {e}")
+    time.sleep(2)
+    try:
+        os.startfile(str(exe))     # запуск как двойным кликом, отвязанно от монитора
+        logger.info(f"A-Parser перезапущен: {exe}")
+        return True
+    except Exception as e:
+        logger.error(f"Не удалось запустить {exe}: {e}")
+        return False
+
+
+def maybe_restart(cfg: dict, state: dict, logger: logging.Logger) -> None:
+    """Перезапускает A-Parser после серии недоступностей, с антидребезгом по времени.
+    Вызывать из обработчика недоступности (down_count уже увеличен)."""
+    exe = cfg.get("aparser_exe_path", "")
+    need = int(cfg.get("restart_after_failures", 0) or 0)
+    if not exe or need <= 0 or state.get("down_count", 0) < need:
+        return
+    cd_min = int(cfg.get("restart_cooldown_min", 0) or 0)
+    last = state.get("last_restart_ts")
+    if last is not None and (time.time() - last) < cd_min * 60:
+        logger.info("Перезапуск пропущен: недавно уже перезапускали (cooldown).")
+        return
+    logger.warning(f"A-Parser недоступен {state.get('down_count')} проверок — перезапуск.")
+    if _restart_aparser(cfg, logger):
+        state["last_restart_ts"] = time.time()
+        state["down_count"] = 0
+        send_telegram(cfg, f"🔁 <b>A-Parser перезапущен</b>\n"
+                           f"Был недоступен {need}+ проверок подряд.")
 
 
 # --------------------------------------------------------------------------- #
@@ -331,8 +385,9 @@ def describe_failure(cfg: dict, err: Exception) -> str:
     return f"🟠 <b>A-Parser API вернул ошибку</b>\n{cfg['aparser_url']}\n{err}"
 
 
-def handle_unavailable(cfg: dict, state: dict, err: Exception) -> None:
-    """A-Parser не ответил или ответил ошибкой: тревога (с кулдауном) и отметка «лежит»."""
+def handle_unavailable(cfg: dict, state: dict, err: Exception, logger: logging.Logger) -> None:
+    """A-Parser не ответил или ответил ошибкой: тревога (с кулдауном), отметка «лежит»
+    и — только при обрыве связи — возможный перезапуск A-Parser."""
     was_down = state.get("down", False)
     key = "down:global"
     # Шлём сразу при первом сбое, дальше — не чаще кулдауна.
@@ -340,14 +395,18 @@ def handle_unavailable(cfg: dict, state: dict, err: Exception) -> None:
         send_telegram(cfg, describe_failure(cfg, err))
         mark_sent(state, key)
     state["down"] = True
-    print(f"[down] {type(err).__name__}: {err}", file=sys.stderr)
+    # Перезапускаем только когда A-Parser реально не отвечает (обрыв/таймаут),
+    # а не когда ответил ошибкой HTTP/JSON (тогда процесс жив, дело в конфиге).
+    if isinstance(err, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+        state["down_count"] = state.get("down_count", 0) + 1
+        maybe_restart(cfg, state, logger)
 
 
 def handle_recovered(cfg: dict, state: dict) -> None:
     """Первый успешный опрос после простоя — сообщаем о восстановлении."""
     if state.get("down"):
         send_telegram(cfg, f"🟢 <b>A-Parser снова доступен</b>\n{cfg['aparser_url']}")
-        print("[up] recovered")
+    state["down_count"] = 0
     state["down"] = False
 
 
@@ -360,12 +419,18 @@ def main() -> int:
             summary = process(cfg, state)
         except (requests.exceptions.RequestException, RuntimeError, ValueError) as e:
             # сеть/таймаут/HTTP-ошибка/невалидный ответ API — считаем недоступностью
-            handle_unavailable(cfg, state, e)
+            handle_unavailable(cfg, state, e, log)
             log.warning(f"NOT OK — {type(e).__name__}: {e}")
         else:
             handle_recovered(cfg, state)
             log.info(f"OK — {summary}")
             maybe_heartbeat(cfg, state, summary)
+        # Autosend не зависит от доступности A-Parser — файловая операция
+        try:
+            from aparser_autosend import run_autosend
+            run_autosend(cfg, state, log)
+        except Exception as e:
+            log.error(f"autosend упал: {type(e).__name__}: {e}")
     finally:
         save_state(state)
     return 0
