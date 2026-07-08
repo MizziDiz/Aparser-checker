@@ -1,5 +1,22 @@
 # aparser_monitor — уведомления A-Parser → Telegram
 
+## Структура проекта
+
+```
+├── aparser_monitor_ui.py     # запуск: монитор через web-интерфейс (Pro) + режимы --check/--dump/--relay/--test-telegram
+├── aparser_monitor.py        # запуск: монитор через API (Enterprise) + общий код (Telegram, конфиг, релей, перезапуск)
+├── aparser_config_gui.py     # запуск: графический редактор настроек
+├── lib/                      # вспомогательные модули
+│   ├── autosend.py           #   отправка результатов на шару + уборка
+│   ├── relay.py              #   сервер-релей Telegram
+│   └── config_schema.py      #   схема полей конфига (для GUI и будущего веб-UI)
+├── config.example.json       # шаблон конфига → скопировать в aparser_monitor.config.json
+├── build-config-exe.bat      # сборка редактора настроек в .exe
+├── requirements.txt
+└── README.md
+```
+Точки запуска (в корне) — их имена и пути в планировщике неизменны. Рабочие файлы (`aparser_monitor.config.json`, `aparser_monitor.state.json`, `aparser_monitor.log`, `aparser_sent.jsonl`, `ui_dumps/`, `build/`, `dist/`) создаются рядом и в репозиторий не коммитятся.
+
 Уведомления в Telegram о состоянии A-Parser. Есть **две версии** — под разные лицензии:
 
 | Скрипт | Лицензия | Как читает состояние | Что умеет |
@@ -109,7 +126,7 @@ schtasks /Create /SC MINUTE /MO 5 /TN "aparser-monitor-ui" ^
 
 ## Редактор настроек (десктоп, .exe)
 
-Вместо ручной правки JSON есть графический редактор конфига — `aparser_config_gui.py` (Tkinter, без внешних зависимостей). Форма строится по единой схеме `aparser_config_schema.py`, которую позже можно переиспользовать и для веб-интерфейса.
+Вместо ручной правки JSON есть графический редактор конфига — `aparser_config_gui.py` (Tkinter, без внешних зависимостей). Форма строится по единой схеме `lib/config_schema.py`, которую позже можно переиспользовать и для веб-интерфейса.
 
 Запуск как скрипт:
 ```
@@ -167,7 +184,7 @@ py aparser_monitor_ui.py --relay        # слушает 0.0.0.0:8899, POST /sen
 
 1. Создайте Telegram-бота у [@BotFather](https://t.me/BotFather) → получите `bot_token`. Узнать `chat_id`: напишите боту, затем откройте `https://api.telegram.org/bot<TOKEN>/getUpdates` и возьмите `chat.id`.
 2. В A-Parser включите API (Настройки → API), запомните порт (по умолчанию `9091`). Пароль опционален — если API без пароля, оставьте `aparser_password` пустым (`""`).
-3. Скопируйте `aparser_monitor.config.example.json` → `aparser_monitor.config.json` и заполните `aparser_password`, `telegram_bot_token`, `telegram_chat_id`, `aparser_url`. Либо задайте те же значения переменными окружения (`APARSER_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `APARSER_URL`) — они имеют приоритет над файлом.
+3. Скопируйте `config.example.json` → `aparser_monitor.config.json` и заполните `aparser_password`, `telegram_bot_token`, `telegram_chat_id`, `aparser_url`. Либо задайте те же значения переменными окружения (`APARSER_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `APARSER_URL`) — они имеют приоритет над файлом.
 
 ## Запуск
 

@@ -17,7 +17,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from aparser_config_schema import CONFIG_FIELDS, CONFIG_FILENAME, coerce, load_values, save_values
+from lib.config_schema import CONFIG_FIELDS, CONFIG_FILENAME, coerce, load_values, save_values
 
 
 def base_dir() -> Path:

@@ -511,7 +511,7 @@ def main() -> int:
     if "--test-telegram" in sys.argv:
         return test_telegram(cfg)
     if "--relay" in sys.argv:
-        from aparser_relay import run_relay
+        from lib.relay import run_relay
         return run_relay(cfg, log)
     state = load_state()
     try:
@@ -527,7 +527,7 @@ def main() -> int:
             maybe_heartbeat(cfg, state, summary)
         # Autosend не зависит от доступности A-Parser — файловая операция
         try:
-            from aparser_autosend import run_autosend
+            from lib.autosend import run_autosend
             run_autosend(cfg, state, log)
         except Exception as e:
             log.error(f"autosend упал: {type(e).__name__}: {e}")

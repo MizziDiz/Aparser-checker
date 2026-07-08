@@ -52,7 +52,7 @@ from aparser_monitor import (
     send_telegram, cooldown_ok, mark_sent, prune_state,
     get_logger, want_debug, maybe_heartbeat, maybe_restart, test_telegram,
 )
-from aparser_autosend import run_autosend
+from lib.autosend import run_autosend
 
 HERE = Path(__file__).resolve().parent
 
@@ -423,7 +423,7 @@ def main() -> int:
     if "--test-telegram" in sys.argv:
         return test_telegram(cfg)
     if "--relay" in sys.argv:
-        from aparser_relay import run_relay
+        from lib.relay import run_relay
         return run_relay(cfg, log)
     if "--interactive" in sys.argv or "-i" in sys.argv:
         interactive(cfg)
