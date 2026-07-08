@@ -27,12 +27,25 @@ def base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-CONFIG_PATH = base_dir() / CONFIG_FILENAME
+DATA_DIR = base_dir() / "data"
+CONFIG_PATH = DATA_DIR / CONFIG_FILENAME
+
+
+def ensure_data_dir() -> None:
+    """Создаёт data/ и переносит туда конфиг из старого расположения (корень)."""
+    try:
+        DATA_DIR.mkdir(exist_ok=True)
+        legacy = base_dir() / CONFIG_FILENAME
+        if legacy.exists() and not CONFIG_PATH.exists():
+            legacy.replace(CONFIG_PATH)
+    except OSError:
+        pass
 
 
 class ConfigApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        ensure_data_dir()
         self.title("A-Parser monitor — настройки")
         self.geometry("640x720")
         self.vars: dict[str, tk.Variable] = {}

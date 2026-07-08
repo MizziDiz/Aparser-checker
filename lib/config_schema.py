@@ -123,4 +123,5 @@ def save_values(path: Path, form: dict) -> None:
     for f in CONFIG_FIELDS:
         if f["key"] in form:
             existing[f["key"]] = coerce(f, form[f["key"]])
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")

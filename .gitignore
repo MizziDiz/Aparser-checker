@@ -1,13 +1,16 @@
-# локальные секреты, состояние, логи — не коммитить
+# рабочие данные (конфиг, состояние, логи, журнал отправок, дампы) — в data/
+data/
+
+# legacy-расположение (на случай старых файлов в корне) — не коммитить
 aparser_monitor.config.json
 aparser_monitor.state.json
 aparser_monitor.log*
 aparser_sent.jsonl
-
-# дампы web-интерфейса (могут содержать ваши данные заданий)
 ui_dumps/
 ui_dump.html
 ui_dump.png
+ui_cards.json
+ui_first_cards.html
 
 # кэш Python
 __pycache__/
@@ -17,3 +20,4 @@ __pycache__/
 build/
 dist/
 *.spec
+aparser-config.exe

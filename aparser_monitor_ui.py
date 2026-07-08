@@ -48,7 +48,7 @@ from pathlib import Path
 
 # переиспользуем конфиг/состояние/кулдаун/Telegram/логи из основного скрипта
 from aparser_monitor import (
-    CONFIG_PATH, DEFAULTS, load_state, save_state, read_config_file,
+    CONFIG_PATH, DATA_DIR, DEFAULTS, load_state, save_state, read_config_file,
     send_telegram, cooldown_ok, mark_sent, prune_state,
     get_logger, want_debug, maybe_heartbeat, maybe_restart, test_telegram,
 )
@@ -331,8 +331,8 @@ def dump(cfg) -> None:
     HTML страницы, скриншот, сырой результат CARDS_JS и outerHTML первых карточек.
     Нужно для разбора, когда --check парсит карточку неверно."""
     from playwright.sync_api import sync_playwright
-    out_html, out_png = HERE / "ui_dump.html", HERE / "ui_dump.png"
-    out_cards, out_first = HERE / "ui_cards.json", HERE / "ui_first_cards.html"
+    out_html, out_png = DATA_DIR / "ui_dump.html", DATA_DIR / "ui_dump.png"
+    out_cards, out_first = DATA_DIR / "ui_cards.json", DATA_DIR / "ui_first_cards.html"
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg)
         try:
@@ -370,8 +370,8 @@ def interactive(cfg) -> None:
     """Открывает ВИДИМЫЙ браузер и сохраняет каждое новое состояние SPA отдельным
     файлом в ui_dumps/ (+ manifest.jsonl). Выход — закрыть окно браузера."""
     from playwright.sync_api import sync_playwright
-    dumps_dir = HERE / "ui_dumps"
-    dumps_dir.mkdir(exist_ok=True)
+    dumps_dir = DATA_DIR / "ui_dumps"
+    dumps_dir.mkdir(parents=True, exist_ok=True)
     manifest = dumps_dir / "manifest.jsonl"
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=False)

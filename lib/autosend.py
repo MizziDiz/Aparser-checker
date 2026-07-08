@@ -31,10 +31,9 @@ import shutil
 import time
 from pathlib import Path
 
-from aparser_monitor import send_telegram
+from aparser_monitor import send_telegram, DATA_DIR
 
-HERE = Path(__file__).resolve().parent
-SENT_LOG = HERE / "aparser_sent.jsonl"
+SENT_LOG = DATA_DIR / "aparser_sent.jsonl"
 
 
 # --------------------------------------------------------------------------- #

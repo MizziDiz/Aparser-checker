@@ -32,9 +32,28 @@ from pathlib import Path
 import requests
 
 HERE = Path(__file__).resolve().parent
-CONFIG_PATH = HERE / "aparser_monitor.config.json"
-STATE_PATH = HERE / "aparser_monitor.state.json"
-LOG_PATH = HERE / "aparser_monitor.log"
+# Рабочие данные держим отдельно от кода, в data/ рядом со скриптами.
+DATA_DIR = HERE / "data"
+CONFIG_PATH = DATA_DIR / "aparser_monitor.config.json"
+STATE_PATH = DATA_DIR / "aparser_monitor.state.json"
+LOG_PATH = DATA_DIR / "aparser_monitor.log"
+
+
+def ensure_data_dir() -> None:
+    """Создаёт data/ и одноразово переносит туда файлы из старого расположения
+    (корень), чтобы обновление не сломало уже настроенные серверы."""
+    try:
+        DATA_DIR.mkdir(exist_ok=True)
+        for name in ("aparser_monitor.config.json", "aparser_monitor.state.json",
+                     "aparser_sent.jsonl"):
+            legacy = HERE / name
+            if legacy.exists() and not (DATA_DIR / name).exists():
+                legacy.replace(DATA_DIR / name)
+    except OSError:
+        pass
+
+
+ensure_data_dir()
 
 DEFAULTS = {
     # http://IP:PORT/API — адрес API A-Parser (порт по умолчанию 9091)
@@ -82,6 +101,10 @@ def get_logger(debug: bool | None = None) -> logging.Logger:
     меняет уровень (для вызовов из вспомогательного кода)."""
     logger = logging.getLogger("aparser_monitor")
     if not logger.handlers:        # ещё не настроен
+        try:
+            DATA_DIR.mkdir(exist_ok=True)
+        except OSError:
+            pass
         logger.setLevel(logging.INFO)
         fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S")
         fh = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
