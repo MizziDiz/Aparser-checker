@@ -37,8 +37,8 @@
   "almost_done_pct": 90,
   "eta_window_min": 30,
 
-  "keygen_script": "C:\\Users\\you\\keys\\gsa_geo_pipeline.py",
-  "keygen_input_xlsx": "C:\\Users\\you\\keys\\gsa_geo_pipeline_keywords_v1.xlsx",
+  "keygen_script": "C:\\Monitor\\keygen\\gsa_geo_pipeline.py",
+  "keygen_input_xlsx": "C:\\Monitor\\keygen\\gsa_geo_pipeline_keywords_v1.xlsx",
   "keygen_python": "",
   "keygen_batches": 5,
   "keygen_target_mb": 6,

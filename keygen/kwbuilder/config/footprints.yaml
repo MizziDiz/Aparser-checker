@@ -1,0 +1,94 @@
+# GSA / A-Parser footprint library, grouped by family.
+#
+# Written to the Footprint_Families sheet. Each footprint is paired with a seed
+# and a geo operator by gsa_geo_pipeline.py to form a query line:
+#     {Seed} {Operator} {Footprint}
+#
+# Families map to CMS / platform / link-target types. Add or disable freely.
+# Set a whole family's `enabled: false` to drop it, or prefix a single line
+# with `!` to disable just that line.
+
+families:
+
+  blog_comment:
+    enabled: true
+    footprints:
+      - '"powered by wordpress"'
+      - '"leave a comment"'
+      - '"notify me of follow-up comments"'
+      - '"your email address will not be published"'
+      - 'inurl:"wp-comments-post.php"'
+      - '"comment" "name" "email" "website"'
+      - '"mail (will not be published) (required)"'
+
+  guestbook:
+    enabled: true
+    footprints:
+      - '"sign my guestbook"'
+      - '"add to guestbook"'
+      - 'inurl:guestbook'
+      - '"powered by php guestbook"'
+      - '"view guestbook"'
+      - '"gbook.php"'
+
+  forum:
+    enabled: true
+    footprints:
+      - '"powered by phpbb"'
+      - '"powered by vbulletin"'
+      - '"powered by smf"'
+      - '"powered by mybb"'
+      - 'inurl:"memberlist.php"'
+      - '"register" "login" "forum"'
+      - 'inurl:"index.php?action=register"'
+
+  article_submit:
+    enabled: true
+    footprints:
+      - '"powered by article dashboard"'
+      - '"submit article"'
+      - '"add article"'
+      - 'inurl:"submit-article"'
+      - '"article directory"'
+      - '"powered by seo-board"'
+
+  wiki:
+    enabled: true
+    footprints:
+      - '"powered by mediawiki"'
+      - 'inurl:"index.php?title=Special:UserLogin"'
+      - '"this page was last edited"'
+      - 'inurl:"Special:CreateAccount"'
+
+  social_bookmark:
+    enabled: true
+    footprints:
+      - '"powered by pligg"'
+      - '"upcoming news"'
+      - '"published news"'
+      - 'inurl:"submit.php"'
+      - '"register" "submit a new story"'
+
+  directory:
+    enabled: true
+    footprints:
+      - '"powered by phpld"'
+      - '"add your site"'
+      - '"submit your site"'
+      - 'inurl:"submit.php?"'
+      - '"powered by php link directory"'
+      - '"add a link"'
+
+  image_comment:
+    enabled: true
+    footprints:
+      - '"powered by 4images"'
+      - '"powered by coppermine photo gallery"'
+      - 'inurl:"addcomment"'
+
+  other_submit:
+    enabled: true
+    footprints:
+      - '"post a comment"'
+      - '"trackback url for this entry"'
+      - '"comments rss"'

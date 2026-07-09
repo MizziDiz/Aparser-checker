@@ -21,3 +21,7 @@ build/
 dist/
 *.spec
 aparser-config.exe
+
+# артефакты кейгена (генерятся при запуске пайплайна)
+keygen/parser_batches/
+query_dedupe.sqlite

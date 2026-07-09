@@ -1,0 +1,45 @@
+# Base seed themes (English) + modifiers.
+#
+# The offline expander builds seeds as:  "<theme>"  and  "<theme> <modifier>".
+# Themes are translated per geo_language by translate.py (when enabled), then
+# optionally blown up further by the Suggest scraper.
+#
+# REPLACE these with your niche themes. The shipped set is a broad, generic
+# starter meant to find link targets across common verticals — edit freely.
+
+# base_weight is the theme's intrinsic soft_weight before geo weight_mult and
+# before any volume signal. Range ~0.8..1.4.
+themes:
+  - { theme: "seo",              base_weight: 1.30 }
+  - { theme: "digital marketing", base_weight: 1.25 }
+  - { theme: "web design",       base_weight: 1.15 }
+  - { theme: "web hosting",      base_weight: 1.10 }
+  - { theme: "insurance",        base_weight: 1.20 }
+  - { theme: "loans",            base_weight: 1.20 }
+  - { theme: "real estate",      base_weight: 1.15 }
+  - { theme: "travel",           base_weight: 1.10 }
+  - { theme: "health",           base_weight: 1.10 }
+  - { theme: "fitness",          base_weight: 1.05 }
+  - { theme: "education",        base_weight: 1.05 }
+  - { theme: "software",         base_weight: 1.10 }
+  - { theme: "ecommerce",        base_weight: 1.10 }
+  - { theme: "finance",          base_weight: 1.15 }
+  - { theme: "legal services",   base_weight: 1.05 }
+  - { theme: "home improvement", base_weight: 1.00 }
+
+# Modifiers appended to a theme to widen the surface. Keep them generic and
+# language-neutral-ish; translate.py can localize them per geo as well.
+modifiers:
+  - "online"
+  - "best"
+  - "top"
+  - "cheap"
+  - "review"
+  - "guide"
+  - "services"
+  - "company"
+  - "tips"
+  - "for beginners"
+
+# include_bare: also emit the theme alone (no modifier) as a seed.
+include_bare: true

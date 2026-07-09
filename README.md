@@ -10,7 +10,10 @@
 ├── lib/                      # вспомогательные модули
 │   ├── autosend.py           #   отправка результатов на шару + уборка
 │   ├── relay.py              #   сервер-релей Telegram
+│   ├── stats.py              #   статистика (зоны/операторы/снимки) + остаток/ETA
+│   ├── keygen.py             #   оркестрация кейгена → батчи в queries
 │   └── config_schema.py      #   схема полей конфига (для GUI и будущего веб-UI)
+├── keygen/                   # вложенный генератор ключей (gsa_geo_pipeline + kwbuilder)
 ├── data/                     # РАБОЧИЕ ДАННЫЕ (создаётся автоматически, не в git)
 │   ├── aparser_monitor.config.json   #   ваш конфиг
 │   ├── aparser_monitor.state.json    #   состояние (кулдаун, счётчики)
@@ -193,7 +196,12 @@ py aparser_monitor_ui.py --keygen
 ```
 За запуск: прогоняет пайплайн на `keygen_input_xlsx` (со случайным seed — свежие батчи каждый раз), затем кладёт каждый батч в `queries/<имя>/<имя>.txt` (каждый батч = задание; раскладка совпадает с `results/<имя>/<имя>.txt` для stats/autosend). В Telegram — сколько батчей подготовлено.
 
-Конфиг: `keygen_script` (путь к `gsa_geo_pipeline.py`), `keygen_input_xlsx`, `keygen_python` (пусто — текущий), `keygen_batches`, `keygen_target_mb`, `keygen_pages`, `keygen_footprints_per_seed`. Пусто в `keygen_script`/`keygen_input_xlsx` — кейген выключен.
+Кейген **вложен в репозиторий** в папке `keygen/` (клонируется вместе с монитором). В конфиге укажите путь к нему на вашей машине:
+```json
+"keygen_script": "C:\\Monitor\\keygen\\gsa_geo_pipeline.py",
+"keygen_input_xlsx": "C:\\Monitor\\keygen\\gsa_geo_pipeline_keywords_v1.xlsx"
+```
+Остальное: `keygen_python` (пусто — текущий), `keygen_batches`, `keygen_target_mb`, `keygen_pages`, `keygen_footprints_per_seed`. Пусто в script/xlsx — кейген выключен. Про сам генератор ключей — см. `keygen/kwbuilder/README.md`.
 
 Строки батчей — формат `Seed Operator Footprint` (`loans site:.cz inurl:"…"`), тот же, что читает статистика операторов. **Создание самих заданий в A-Parser (Pro) — вручную/через UI** под подготовленные файлы; здесь только генерация и раскладка.
 
