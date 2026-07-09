@@ -13,6 +13,7 @@
   "relay_secret": "",
   "relay_port": 8899,
   "relay_bind": "0.0.0.0",
+  "relay_allowed_ips": "",
 
   "error_threshold": 0.5,
   "cooldown_hours": 8,

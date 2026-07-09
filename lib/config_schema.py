@@ -49,7 +49,9 @@ CONFIG_FIELDS: list[dict] = [
     {"group": "Релей", "key": "relay_port", "type": "int", "default": 8899,
      "label": "Порт релея (на релее)", "help": "Порт прослушивания при --relay"},
     {"group": "Релей", "key": "relay_bind", "type": "str", "default": "0.0.0.0",
-     "label": "Адрес прослушивания релея", "help": "0.0.0.0 — все интерфейсы"},
+     "label": "Адрес прослушивания релея", "help": "лучше IP локальной сети, напр. 10.10.10.2"},
+    {"group": "Релей", "key": "relay_allowed_ips", "type": "str", "default": "",
+     "label": "Разрешённые IP (на релее)", "help": "напр. 10.10.10.0/24; пусто — все (не рекомендуется)"},
 
     # — Пороги и поведение —
     {"group": "Пороги и поведение", "key": "error_threshold", "type": "float", "default": 0.5,
