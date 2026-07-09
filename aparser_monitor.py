@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -61,6 +62,7 @@ DEFAULTS = {
     "aparser_password": "",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
+    "server_name": "",        # подпись сервера в сообщениях; пусто — имя хоста
     "telegram_proxy": "",     # прокси для Telegram, если api.telegram.org недоступен напрямую
                               # напр. "socks5://user:pass@host:1080" или "http://host:3128"
 
@@ -335,10 +337,17 @@ def send_via_relay(cfg: dict, text: str) -> None:
         raise RuntimeError(f"релей вернул ошибку: {body}")
 
 
+def server_label(cfg: dict) -> str:
+    """Подпись сервера в сообщениях: server_name из конфига или имя хоста."""
+    return str(cfg.get("server_name") or socket.gethostname())
+
+
 def send_telegram(cfg: dict, text: str) -> bool:
     """Отправка сообщения: напрямую или через релей (если задан telegram_relay_url).
+    Каждое сообщение подписывается именем сервера, чтобы различать источник.
     Ошибки НЕ пробрасываем наружу (иначе примутся за недоступность A-Parser) —
     логируем и возвращаем False."""
+    text = f"🖥 <b>{server_label(cfg)}</b>\n{text}"
     try:
         if cfg.get("telegram_relay_url"):
             send_via_relay(cfg, text)

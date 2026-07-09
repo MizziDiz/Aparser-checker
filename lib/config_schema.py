@@ -38,6 +38,8 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Токен бота", "help": "Нужен при прямой отправке и на сервере-релее"},
     {"group": "Telegram", "key": "telegram_chat_id", "type": "str", "default": "",
      "label": "Chat ID", "help": "Куда слать уведомления"},
+    {"group": "Telegram", "key": "server_name", "type": "str", "default": "",
+     "label": "Имя сервера (подпись)", "help": "Подпись в сообщениях; пусто — имя хоста"},
     {"group": "Telegram", "key": "telegram_proxy", "type": "str", "default": "",
      "label": "Прокси для Telegram", "help": "socks5://host:1080 или http://host:3128; пусто — напрямую"},
 
