@@ -32,6 +32,8 @@
   "autosend_cleanup_min": 1440,
 
   "stats_settle_min": 2,
+  "stats_snapshots": true,
+  "stats_retention_days": 30,
 
   "debug": false
 }

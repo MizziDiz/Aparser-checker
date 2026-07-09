@@ -67,6 +67,9 @@ FIRST_INT_RE = re.compile(r"(\d+)")           # «148034/588410 25.2%» → 1480
 LABELS_STATUS = ("Status:", "Статус:")
 LABELS_FAILED = ("Failed queries:", "Неудачных запросов:")
 LABELS_DONE = ("Queries done/all:", "Запросы заверш./всего:")
+LABELS_SPEED = ("Speed cur/avg:", "Скорость текущая/общая:")
+LABELS_RESULTS = ("Results unique/all:", "Результатов уник/всего:")
+TWO_INTS_RE = re.compile(r"(\d+)\s*/\s*(\d+)")   # «148034/588410 25.2%» → (148034, 588410)
 # статусы «задание завершено» (всё остальное считаем активным — консервативно,
 # чтобы случайно не объявить завершение раньше времени)
 DONE_STATUSES = {"completed", "complete", "done", "finished"}
@@ -146,15 +149,27 @@ def _field(fields: dict, labels: tuple[str, ...]) -> str:
     return ""
 
 
+def _two_ints(text: str) -> tuple[int, int]:
+    m = TWO_INTS_RE.search(text or "")
+    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+
 def _card_from_raw(raw: dict) -> dict:
     f = raw.get("fields", {})
     fm = FAILED_PCT_RE.search(_field(f, LABELS_FAILED))
-    dm = FIRST_INT_RE.search(_field(f, LABELS_DONE))
+    done, total = _two_ints(_field(f, LABELS_DONE))
+    speed_cur, speed_avg = _two_ints(_field(f, LABELS_SPEED))
+    res_uniq, res_all = _two_ints(_field(f, LABELS_RESULTS))
     return {
         "title": raw.get("title", "?"),
         "failed_pct": float(fm.group(1)) if fm else None,
-        "done": int(dm.group(1)) if dm else 0,
+        "done": done,
+        "total": total,
         "status": _field(f, LABELS_STATUS).strip(),
+        "speed_cur": speed_cur,
+        "speed_avg": speed_avg,
+        "results_uniq": res_uniq,
+        "results_all": res_all,
     }
 
 
@@ -298,6 +313,13 @@ def run(cfg, state) -> str:
     active = active_count(cards)
     notify_completion(cfg, state, active, len(cards))
     over = notify_errors(cfg, state, cards)
+    # снимки метрик заданий в SQLite (не ломают прогон при сбое)
+    if cfg.get("stats_snapshots", True):
+        try:
+            from lib.stats import record_snapshots
+            record_snapshots(cfg, cards, get_logger())
+        except Exception as e:  # noqa: BLE001
+            get_logger().error(f"stats: снимок не записан: {type(e).__name__}: {e}")
     return f"заданий {len(cards)}, активных {active}, с ошибками>{cfg['error_threshold']:.0%}: {over}"
 
 

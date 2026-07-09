@@ -54,13 +54,83 @@ CREATE TABLE IF NOT EXISTS query_operators(
   result_key TEXT, operator TEXT, param TEXT, value TEXT, count INTEGER,
   PRIMARY KEY(result_key, operator, param, value)
 );
+CREATE TABLE IF NOT EXISTS task_snapshots(
+  ts INTEGER, task TEXT, status TEXT,
+  done INTEGER, total INTEGER, failed_pct REAL,
+  speed_cur INTEGER, speed_avg INTEGER,
+  results_uniq INTEGER, results_all INTEGER
+);
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
+CREATE INDEX IF NOT EXISTS idx_snap_ts ON task_snapshots(ts);
+CREATE INDEX IF NOT EXISTS idx_snap_task ON task_snapshots(task, ts);
+CREATE INDEX IF NOT EXISTS idx_meta_ts ON results_meta(ts_parsed);
+CREATE INDEX IF NOT EXISTS idx_zone ON domain_zones(zone);
+CREATE INDEX IF NOT EXISTS idx_op ON query_operators(operator);
 """
 
 
 def _connect() -> sqlite3.Connection:
-    con = sqlite3.connect(STATS_DB)
+    STATS_DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(STATS_DB, timeout=10)
+    con.execute("PRAGMA journal_mode=WAL")     # два писателя (монитор + --stats)
+    con.execute("PRAGMA busy_timeout=5000")
+    con.execute("PRAGMA synchronous=NORMAL")
     con.executescript(SCHEMA)
     return con
+
+
+# --------------------------------------------------------------------------- #
+# Снимки метрик заданий + ретенция
+# --------------------------------------------------------------------------- #
+def _get_meta_int(con, key: str, default: int = 0) -> int:
+    row = con.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    try:
+        return int(row[0]) if row else default
+    except (TypeError, ValueError):
+        return default
+
+
+def cleanup_old(con, days: int) -> None:
+    """Удаляет данные старше N дней (снимки заданий и разобранные результаты)."""
+    cutoff = int(time.time()) - days * 86400
+    con.execute("DELETE FROM task_snapshots WHERE ts < ?", (cutoff,))
+    con.execute("DELETE FROM domain_zones WHERE result_key IN "
+                "(SELECT result_key FROM results_meta WHERE ts_parsed < ?)", (cutoff,))
+    con.execute("DELETE FROM query_operators WHERE result_key IN "
+                "(SELECT result_key FROM results_meta WHERE ts_parsed < ?)", (cutoff,))
+    con.execute("DELETE FROM results_meta WHERE ts_parsed < ?", (cutoff,))
+    con.commit()
+
+
+def maybe_cleanup(con, days: int) -> None:
+    """Чистка не чаще раза в 6 часов (по отметке в meta)."""
+    if days <= 0:
+        return
+    if time.time() - _get_meta_int(con, "last_cleanup") >= 6 * 3600:
+        cleanup_old(con, days)
+        con.execute("INSERT OR REPLACE INTO meta VALUES('last_cleanup', ?)", (str(int(time.time())),))
+        con.commit()
+
+
+def record_snapshots(cfg: dict, cards: list[dict], logger: logging.Logger) -> None:
+    """Пишет снимок метрик по прогрессирующим заданиям (done>0). Вызывается из
+    обычного прохода монитора. Заодно запускает ретенцию (с троттлингом)."""
+    days = int(cfg.get("stats_retention_days", 30) or 0)
+    rows = [(int(time.time()), c.get("title", "?"), c.get("status", ""),
+             c.get("done", 0), c.get("total", 0), c.get("failed_pct"),
+             c.get("speed_cur", 0), c.get("speed_avg", 0),
+             c.get("results_uniq", 0), c.get("results_all", 0))
+            for c in cards if c.get("done", 0) > 0]
+    con = _connect()
+    try:
+        if rows:
+            con.executemany(
+                "INSERT INTO task_snapshots VALUES(?,?,?,?,?,?,?,?,?,?)", rows)
+            con.commit()
+            logger.debug(f"stats: снимков заданий записано {len(rows)}")
+        maybe_cleanup(con, days)
+    finally:
+        con.close()
 
 
 def _signature(p: Path) -> str:
@@ -166,6 +236,7 @@ def run_stats(cfg: dict, logger: logging.Logger) -> None:
             parsed += 1
             logger.info(f"stats: {key} — строк {lines}, доменов {domains}, "
                         f"операторов {sum(ops.values())}")
+    maybe_cleanup(con, int(cfg.get("stats_retention_days", 30) or 0))
     con.close()
     if parsed:
         logger.info(f"stats: обработано результатов: {parsed}")

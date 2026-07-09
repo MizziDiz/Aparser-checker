@@ -170,10 +170,15 @@ py aparser_monitor_ui.py --stats
 ```
 Каждый файл результата разбирается один раз (инкрементально, по mtime+размеру), только когда «устоялся» (`stats_settle_min`). Файлы большие — ставьте `--stats` отдельной задачей планировщика, реже монитора (напр. раз в 15–30 мин). `tldextract` работает офлайн (встроенный список суффиксов).
 
+**Снимки метрик заданий.** В обычном проходе монитора (не `--stats`) пишутся снимки по прогрессирующим заданиям (`done>0`) в таблицу `task_snapshots`: `ts, task, status, done, total, failed_pct, speed_cur/avg, results_uniq/all` — получается time-series прогресса. Управляется `stats_snapshots` (по умолчанию вкл).
+
+**Ретенция и оптимизация.** Данные старше `stats_retention_days` (по умолчанию 30; `0` — не удалять) удаляются автоматически, не чаще раза в 6 часов. БД в режиме WAL (два писателя: монитор + `--stats`), с индексами по времени/зоне/оператору.
+
 Примеры выборок:
 ```sql
 SELECT zone, SUM(count) FROM domain_zones GROUP BY zone ORDER BY 2 DESC;      -- топ зон
 SELECT operator, value, SUM(count) FROM query_operators GROUP BY operator, value ORDER BY 3 DESC;
+SELECT task, MAX(done), MAX(total) FROM task_snapshots GROUP BY task;          -- прогресс заданий
 ```
 Интерфейс к статистике пока не делаем (только сбор) — см. `ROADMAP.md`.
 

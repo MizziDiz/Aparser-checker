@@ -92,6 +92,10 @@ CONFIG_FIELDS: list[dict] = [
     # — Статистика (--stats) —
     {"group": "Статистика", "key": "stats_settle_min", "type": "int", "default": 2,
      "label": "Считать результат после N мин без изменений", "help": "использует queries_dir/results_dir"},
+    {"group": "Статистика", "key": "stats_snapshots", "type": "bool", "default": True,
+     "label": "Снимки метрик заданий в БД", "help": "пишутся в проходе монитора (time-series)"},
+    {"group": "Статистика", "key": "stats_retention_days", "type": "int", "default": 30,
+     "label": "Хранить статистику, дней", "help": "старше — удаляется; 0 — не удалять"},
 ]
 
 
