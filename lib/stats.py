@@ -18,6 +18,7 @@ lib/stats.py — статистика по результатам и запро�
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -26,7 +27,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from aparser_monitor import DATA_DIR
+from aparser_monitor import DATA_DIR, send_telegram
 
 STATS_DB = DATA_DIR / "aparser_stats.db"
 
@@ -163,6 +164,71 @@ def record_snapshots(cfg: dict, cards: list[dict], logger: logging.Logger) -> No
         maybe_cleanup(con, days)
     finally:
         con.close()
+
+
+# --------------------------------------------------------------------------- #
+# Топ-сводки в Telegram (--top): топ зон и операторов за период
+# --------------------------------------------------------------------------- #
+def _fmt_int(n: int) -> str:
+    """12345 → «12 345» (разряд пробелом), чтобы читалось в Telegram."""
+    return f"{int(n):,}".replace(",", " ")
+
+
+def _op_label(operator: str, param: str, value: str) -> str:
+    """(site, '', .com) → 'site:.com'; (instreamset, url, .org) → 'instreamset:(url):.org'."""
+    return f"{operator}:({param}):{value}" if param else f"{operator}:{value}"
+
+
+def top_summary(cfg: dict, days: int | None = None, limit: int | None = None) -> str | None:
+    """HTML-текст топ-сводки за период или None, если данных за период нет.
+    Топы агрегируются по всем результатам, разобранным (ts_parsed) за последние N дней."""
+    days = int(days if days is not None else (cfg.get("top_period_days", 7) or 7))
+    limit = int(limit if limit is not None else (cfg.get("top_limit", 10) or 10))
+    if not STATS_DB.exists():
+        return None
+    cutoff = int(time.time()) - days * 86400
+    con = _connect()
+    try:
+        n_results, n_lines, n_domains = con.execute(
+            "SELECT COUNT(*), COALESCE(SUM(result_lines),0), COALESCE(SUM(domains_total),0) "
+            "FROM results_meta WHERE ts_parsed >= ?", (cutoff,)).fetchone()
+        zones = con.execute(
+            "SELECT z.zone, SUM(z.count) c FROM domain_zones z "
+            "JOIN results_meta m ON z.result_key = m.result_key "
+            "WHERE m.ts_parsed >= ? GROUP BY z.zone ORDER BY c DESC LIMIT ?",
+            (cutoff, limit)).fetchall()
+        ops = con.execute(
+            "SELECT q.operator, q.param, q.value, SUM(q.count) c FROM query_operators q "
+            "JOIN results_meta m ON q.result_key = m.result_key "
+            "WHERE m.ts_parsed >= ? GROUP BY q.operator, q.param, q.value ORDER BY c DESC LIMIT ?",
+            (cutoff, limit)).fetchall()
+    finally:
+        con.close()
+    if not n_results:
+        return None
+    out = [f"📊 <b>A-Parser: топ за {days} дн.</b>",
+           f"Результатов разобрано: {_fmt_int(n_results)} "
+           f"(строк {_fmt_int(n_lines)}, доменов {_fmt_int(n_domains)})"]
+    if zones:
+        out.append("\n<b>Зоны:</b>")
+        out += [f"{i}. {html.escape(z)} — {_fmt_int(c)}" for i, (z, c) in enumerate(zones, 1)]
+    if ops:
+        out.append("\n<b>Операторы:</b>")
+        out += [f"{i}. {html.escape(_op_label(o, p, v))} — {_fmt_int(c)}"
+                for i, (o, p, v, c) in enumerate(ops, 1)]
+    return "\n".join(out)
+
+
+def run_top(cfg: dict, logger: logging.Logger) -> None:
+    """Собирает топ-сводку за период и шлёт её в Telegram (--top)."""
+    text = top_summary(cfg)
+    if not text:
+        logger.info("top: нет данных статистики за период — сводка не отправлена")
+        return
+    if send_telegram(cfg, text):
+        logger.info("top: сводка отправлена в Telegram")
+    else:
+        logger.warning("top: сводку не удалось отправить (см. ошибку отправки выше)")
 
 
 def _signature(p: Path) -> str:

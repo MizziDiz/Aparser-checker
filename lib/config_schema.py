@@ -100,6 +100,10 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Уведомлять «почти готово» при N%", "help": "0 — не уведомлять"},
     {"group": "Статистика", "key": "eta_window_min", "type": "int", "default": 30,
      "label": "Окно оценки скорости для ETA, мин", "help": "по снимкам за это окно"},
+    {"group": "Статистика", "key": "top_period_days", "type": "int", "default": 7,
+     "label": "Период топ-сводки (--top), дней", "help": "топ зон/операторов за N дней"},
+    {"group": "Статистика", "key": "top_limit", "type": "int", "default": 10,
+     "label": "Позиций в топе", "help": "сколько строк в каждом топе"},
 
     # — Кейген (--keygen) —
     {"group": "Кейген", "key": "keygen_script", "type": "str", "default": "",

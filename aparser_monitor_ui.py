@@ -541,6 +541,10 @@ def main() -> int:
         from lib.stats import run_stats
         run_stats(cfg, log)
         return 0
+    if "--top" in sys.argv:
+        from lib.stats import run_top
+        run_top(cfg, log)
+        return 0
     if "--keygen" in sys.argv:
         from lib.keygen import run_keygen
         run_keygen(cfg, log)

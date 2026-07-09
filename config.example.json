@@ -36,6 +36,8 @@
   "stats_retention_days": 30,
   "almost_done_pct": 90,
   "eta_window_min": 30,
+  "top_period_days": 7,
+  "top_limit": 10,
 
   "keygen_script": "C:\\Monitor\\keygen\\gsa_geo_pipeline.py",
   "keygen_input_xlsx": "C:\\Monitor\\keygen\\gsa_geo_pipeline_keywords_v1.xlsx",

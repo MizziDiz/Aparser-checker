@@ -185,7 +185,31 @@ SELECT zone, SUM(count) FROM domain_zones GROUP BY zone ORDER BY 2 DESC;      --
 SELECT operator, value, SUM(count) FROM query_operators GROUP BY operator, value ORDER BY 3 DESC;
 SELECT task, MAX(done), MAX(total) FROM task_snapshots GROUP BY task;          -- прогресс заданий
 ```
-Интерфейс к статистике пока не делаем (только сбор) — см. `ROADMAP.md`.
+Полноценный интерфейс к статистике пока не делаем (только сбор) — см. `ROADMAP.md`.
+
+### Топ-сводки в Telegram (`--top`)
+
+Отправляет в Telegram топ доменных зон и операторов запросов за период (по результатам, разобранным за последние `top_period_days` дней, по `top_limit` позиций в каждом топе):
+
+```bash
+py aparser_monitor_ui.py --top
+```
+
+Считает по той же `data/aparser_stats.db`, поэтому запускать имеет смысл после того, как `--stats` наполнил базу. Если данных за период нет — ничего не шлёт (пишет в лог). Ставьте отдельной задачей планировщика реже монитора (напр. раз в сутки). Пример сообщения:
+
+```
+📊 A-Parser: топ за 7 дн.
+Результатов разобрано: 2 (строк 1 500, доменов 1 430)
+
+Зоны:
+1. .com — 800
+2. .ru — 300
+…
+
+Операторы:
+1. site:.com — 65
+2. instreamset:(url):.org — 7
+```
 
 ## Кейген запросов (`--keygen`)
 
