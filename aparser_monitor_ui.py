@@ -363,6 +363,50 @@ def run(cfg, state) -> str:
 # --------------------------------------------------------------------------- #
 # Вспомогательные режимы
 # --------------------------------------------------------------------------- #
+def _count_unused_batches(cfg) -> int:
+    """Батчи = подпапки queries/<имя>/. «Не использованные» — те, для которых нет
+    одноимённой подпапки в results/ (задание ещё не отработало)."""
+    qd, rd = cfg.get("queries_dir", ""), cfg.get("results_dir", "")
+    if not qd:
+        return 0
+    qroot = Path(qd)
+    if not qroot.exists():
+        return 0
+    q_names = {d.name for d in qroot.iterdir() if d.is_dir()}
+    r_names = set()
+    if rd and Path(rd).exists():
+        r_names = {d.name for d in Path(rd).iterdir() if d.is_dir()}
+    return len(q_names - r_names)
+
+
+def run_autopilot(cfg, state, log) -> None:
+    """При простое A-Parser: есть батчи → нужно создать задание (UI, в разработке);
+    нет батчей → запустить кейген. Отдельный режим --autopilot (по расписанию)."""
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        browser, page = open_ui(pw, cfg)
+        try:
+            cards = collect_cards(page)
+        finally:
+            browser.close()
+    active = active_count(cards)
+    if active > 0:
+        log.info(f"autopilot: активных заданий {active} — ничего не делаем")
+        return
+    unused = _count_unused_batches(cfg)
+    if unused > 0:
+        log.info(f"autopilot: заданий нет, готовых батчей {unused} — нужно создать задание "
+                 f"(UI-автосоздание в разработке)")
+        if cooldown_ok(state, "autopilot:idle", cfg["cooldown_hours"]):
+            send_telegram(cfg, f"🟡 <b>A-Parser простаивает</b>\n"
+                               f"Готовых батчей: {unused}. Нужно создать задание.")
+            mark_sent(state, "autopilot:idle")
+    else:
+        log.info("autopilot: ни заданий, ни батчей — запускаю кейген")
+        from lib.keygen import run_keygen
+        run_keygen(cfg, log)
+
+
 def check(cfg) -> None:
     """Диагностика: показать разобранные карточки и кто вызовет тревогу, без отправки."""
     from playwright.sync_api import sync_playwright
@@ -500,6 +544,13 @@ def main() -> int:
     if "--keygen" in sys.argv:
         from lib.keygen import run_keygen
         run_keygen(cfg, log)
+        return 0
+    if "--autopilot" in sys.argv:
+        state = load_state()
+        try:
+            run_autopilot(cfg, state, log)
+        finally:
+            save_state(state)
         return 0
     state = load_state()
     try:
