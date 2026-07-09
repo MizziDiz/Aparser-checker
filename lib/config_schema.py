@@ -88,6 +88,10 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Готов после N мин без изменений", "help": "Тогда отправляем"},
     {"group": "Autosend", "key": "autosend_cleanup_min", "type": "int", "default": 1440,
      "label": "Удалять после N мин без изменений", "help": "Отправить (если нет) и удалить"},
+
+    # — Статистика (--stats) —
+    {"group": "Статистика", "key": "stats_settle_min", "type": "int", "default": 2,
+     "label": "Считать результат после N мин без изменений", "help": "использует queries_dir/results_dir"},
 ]
 
 

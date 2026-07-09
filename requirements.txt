@@ -1,1 +1,5 @@
 requests>=2.31.0
+# для монитора web-интерфейса (aparser_monitor_ui.py); нужен ещё: playwright install chromium
+playwright>=1.40.0
+# для статистики доменных зон (--stats)
+tldextract>=5.1.0

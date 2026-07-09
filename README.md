@@ -158,6 +158,25 @@ build-config-exe.bat        # ставит PyInstaller и собирает dist\
 
 Если создание задачи не удаётся из-за прав — редактор покажет готовую команду `schtasks`, её можно выполнить в командной строке администратора.
 
+## Статистика (`--stats`)
+
+Собирает статистику по результатам и запросам в SQLite (`data/aparser_stats.db`), используя `queries_dir` и `results_dir`:
+- **доменные зоны** из файлов результатов (URL по строке → суффикс через `tldextract`: `www.mediawiki.org` → `org`, `bbc.co.uk` → `co.uk`);
+- **операторы запросов** из query-файлов: `site:.com`, `instreamset:(url):.org`, `inurl:…` — оператор, параметр и значение.
+
+```
+py -m pip install tldextract
+py aparser_monitor_ui.py --stats
+```
+Каждый файл результата разбирается один раз (инкрементально, по mtime+размеру), только когда «устоялся» (`stats_settle_min`). Файлы большие — ставьте `--stats` отдельной задачей планировщика, реже монитора (напр. раз в 15–30 мин). `tldextract` работает офлайн (встроенный список суффиксов).
+
+Примеры выборок:
+```sql
+SELECT zone, SUM(count) FROM domain_zones GROUP BY zone ORDER BY 2 DESC;      -- топ зон
+SELECT operator, value, SUM(count) FROM query_operators GROUP BY operator, value ORDER BY 3 DESC;
+```
+Интерфейс к статистике пока не делаем (только сбор) — см. `ROADMAP.md`.
+
 ## Дебаг (обе версии)
 
 Подробные логи включаются флагом **`--debug`** или `"debug": true` в конфиге (по умолчанию выключено):

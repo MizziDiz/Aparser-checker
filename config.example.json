@@ -31,5 +31,7 @@
   "autosend_settle_min": 2,
   "autosend_cleanup_min": 1440,
 
+  "stats_settle_min": 2,
+
   "debug": false
 }

@@ -434,6 +434,10 @@ def main() -> int:
     if "--check" in sys.argv:
         check(cfg)
         return 0
+    if "--stats" in sys.argv:
+        from lib.stats import run_stats
+        run_stats(cfg, log)
+        return 0
     state = load_state()
     try:
         try:
