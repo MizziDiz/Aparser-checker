@@ -286,6 +286,39 @@ def notify_errors(cfg, state, cards: list[dict]) -> int:
     return over
 
 
+def _fmt_eta(sec) -> str:
+    if not sec or sec <= 0:
+        return "—"
+    sec = int(sec)
+    h, m = sec // 3600, (sec % 3600) // 60
+    return f"{h}ч {m:02d}м" if h else f"{m}м"
+
+
+def notify_progress(cfg, state, cards) -> str:
+    """Уведомление «почти готово» (порог almost_done_pct) с ETA и краткая сводка
+    остатка для heartbeat/лога. ETA считается по снимкам task_snapshots."""
+    thr = float(cfg.get("almost_done_pct", 90) or 0) / 100
+    try:
+        from lib.stats import progress_info
+        info = progress_info(cfg, cards)
+    except Exception as e:  # noqa: BLE001
+        get_logger().error(f"stats: ETA не посчитан: {type(e).__name__}: {e}")
+        return ""
+    parts = []
+    for it in info:
+        if (it["status"] or "").lower() in DONE_STATUSES:
+            continue
+        eta = _fmt_eta(it["eta_sec"])
+        if thr > 0 and it["pct"] >= thr:
+            key = f"progress:{it['title']}"
+            if cooldown_ok(state, key, cfg["cooldown_hours"]):
+                send_telegram(cfg, f"⏳ <b>{it['title']} почти готово</b>\n"
+                                   f"{it['pct']:.0%}, осталось {it['remaining']}, ETA {eta}")
+                mark_sent(state, key)
+        parts.append(f"{it['title']}: ост.{it['remaining']}, ETA {eta}")
+    return "; ".join(parts[:3])
+
+
 def handle_ui_down(cfg, state, err, logger) -> None:
     was_down = state.get("down", False)
     key = "down:global"
@@ -313,14 +346,18 @@ def run(cfg, state) -> str:
     active = active_count(cards)
     notify_completion(cfg, state, active, len(cards))
     over = notify_errors(cfg, state, cards)
-    # снимки метрик заданий в SQLite (не ломают прогон при сбое)
+    summary = f"заданий {len(cards)}, активных {active}, с ошибками>{cfg['error_threshold']:.0%}: {over}"
+    # снимки метрик заданий + остаток/ETA (не ломают прогон при сбое)
     if cfg.get("stats_snapshots", True):
         try:
             from lib.stats import record_snapshots
             record_snapshots(cfg, cards, get_logger())
+            progress = notify_progress(cfg, state, cards)
+            if progress:
+                summary += f" | {progress}"
         except Exception as e:  # noqa: BLE001
-            get_logger().error(f"stats: снимок не записан: {type(e).__name__}: {e}")
-    return f"заданий {len(cards)}, активных {active}, с ошибками>{cfg['error_threshold']:.0%}: {over}"
+            get_logger().error(f"stats: снимок/ETA не записан: {type(e).__name__}: {e}")
+    return summary
 
 
 # --------------------------------------------------------------------------- #

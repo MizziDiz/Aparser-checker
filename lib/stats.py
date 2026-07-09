@@ -112,6 +112,38 @@ def maybe_cleanup(con, days: int) -> None:
         con.commit()
 
 
+def progress_info(cfg: dict, cards: list[dict]) -> list[dict]:
+    """По каждому заданию с total>0, done>0 считает остаток и ETA (сек) из скорости,
+    оценённой по снимкам за окно eta_window_min (Δdone/Δвремя). ETA=None, если данных
+    ещё нет. Вызывать ПОСЛЕ record_snapshots (в БД уже есть свежий снимок)."""
+    window = float(cfg.get("eta_window_min", 30) or 30)
+    now = int(time.time())
+    out: list[dict] = []
+    con = _connect()
+    try:
+        for c in cards:
+            total, done = c.get("total", 0), c.get("done", 0)
+            if total <= 0 or done <= 0:
+                continue
+            remaining = total - done
+            row = con.execute(
+                "SELECT ts, done FROM task_snapshots WHERE task=? AND ts>=? AND ts<? "
+                "AND done<=? ORDER BY ts ASC LIMIT 1",
+                (c.get("title", "?"), now - int(window * 60), now, done)).fetchone()
+            eta = None
+            if row:
+                ts0, done0 = row
+                dt, dd = now - ts0, done - done0
+                if dt > 0 and dd > 0:
+                    eta = remaining * dt / dd            # remaining / (dd/dt)
+            out.append({"title": c.get("title", "?"), "done": done, "total": total,
+                        "remaining": remaining, "pct": done / total,
+                        "eta_sec": eta, "status": c.get("status", "")})
+    finally:
+        con.close()
+    return out
+
+
 def record_snapshots(cfg: dict, cards: list[dict], logger: logging.Logger) -> None:
     """Пишет снимок метрик по прогрессирующим заданиям (done>0). Вызывается из
     обычного прохода монитора. Заодно запускает ретенцию (с троттлингом)."""

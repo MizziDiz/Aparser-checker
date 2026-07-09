@@ -96,6 +96,10 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Снимки метрик заданий в БД", "help": "пишутся в проходе монитора (time-series)"},
     {"group": "Статистика", "key": "stats_retention_days", "type": "int", "default": 30,
      "label": "Хранить статистику, дней", "help": "старше — удаляется; 0 — не удалять"},
+    {"group": "Статистика", "key": "almost_done_pct", "type": "int", "default": 90,
+     "label": "Уведомлять «почти готово» при N%", "help": "0 — не уведомлять"},
+    {"group": "Статистика", "key": "eta_window_min", "type": "int", "default": 30,
+     "label": "Окно оценки скорости для ETA, мин", "help": "по снимкам за это окно"},
 ]
 
 
