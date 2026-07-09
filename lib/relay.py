@@ -53,7 +53,9 @@ def _ip_allowed(ip: str, nets: list) -> bool:
     return any(addr in n for n in nets)
 
 
-def run_relay(cfg: dict, logger: logging.Logger) -> int:
+def build_relay(cfg: dict, logger: logging.Logger) -> ThreadingHTTPServer:
+    """Создаёт (но НЕ запускает) сервер-релей. serve_forever()/shutdown() — на
+    вызывающей стороне; удобно для запуска из GUI в отдельном потоке."""
     port = int(cfg.get("relay_port", 8899) or 8899)
     bind = cfg.get("relay_bind", "0.0.0.0") or "0.0.0.0"
     secret = cfg.get("relay_secret", "")
@@ -117,6 +119,12 @@ def run_relay(cfg: dict, logger: logging.Logger) -> int:
     srv = Server((bind, port), Handler)
     logger.info(f"relay слушает {bind}:{port} (POST /send); allowlist="
                 f"{cfg.get('relay_allowed_ips') or 'все'}; chat_id={cfg.get('telegram_chat_id')}")
+    return srv
+
+
+def run_relay(cfg: dict, logger: logging.Logger) -> int:
+    """Запуск релея как отдельного процесса (--relay): блокирующий serve_forever."""
+    srv = build_relay(cfg, logger)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
