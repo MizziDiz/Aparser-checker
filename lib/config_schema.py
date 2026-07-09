@@ -100,6 +100,22 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Уведомлять «почти готово» при N%", "help": "0 — не уведомлять"},
     {"group": "Статистика", "key": "eta_window_min", "type": "int", "default": 30,
      "label": "Окно оценки скорости для ETA, мин", "help": "по снимкам за это окно"},
+
+    # — Кейген (--keygen) —
+    {"group": "Кейген", "key": "keygen_script", "type": "str", "default": "",
+     "label": "Путь к gsa_geo_pipeline.py", "help": "пусто — кейген выключен"},
+    {"group": "Кейген", "key": "keygen_input_xlsx", "type": "str", "default": "",
+     "label": "Путь к xlsx с ключами", "help": "вход пайплайна"},
+    {"group": "Кейген", "key": "keygen_python", "type": "str", "default": "",
+     "label": "python для пайплайна", "help": "пусто — текущий; нужен openpyxl"},
+    {"group": "Кейген", "key": "keygen_batches", "type": "int", "default": 5,
+     "label": "Батчей за запуск", "help": ""},
+    {"group": "Кейген", "key": "keygen_target_mb", "type": "int", "default": 6,
+     "label": "Размер батча, МБ", "help": ""},
+    {"group": "Кейген", "key": "keygen_pages", "type": "int", "default": 25,
+     "label": "pages (в manifest пайплайна)", "help": ""},
+    {"group": "Кейген", "key": "keygen_footprints_per_seed", "type": "int", "default": 24,
+     "label": "Футпринтов на seed", "help": ""},
 ]
 
 

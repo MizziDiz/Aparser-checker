@@ -184,6 +184,19 @@ SELECT task, MAX(done), MAX(total) FROM task_snapshots GROUP BY task;          -
 ```
 Интерфейс к статистике пока не делаем (только сбор) — см. `ROADMAP.md`.
 
+## Кейген запросов (`--keygen`)
+
+Оркестрирует внешний генератор ключей (`gsa_geo_pipeline.py`) и раскладывает готовые батчи в папку `queries` A-Parser:
+```
+py -m pip install openpyxl           # нужен пайплайну
+py aparser_monitor_ui.py --keygen
+```
+За запуск: прогоняет пайплайн на `keygen_input_xlsx` (со случайным seed — свежие батчи каждый раз), затем кладёт каждый батч в `queries/<имя>/<имя>.txt` (каждый батч = задание; раскладка совпадает с `results/<имя>/<имя>.txt` для stats/autosend). В Telegram — сколько батчей подготовлено.
+
+Конфиг: `keygen_script` (путь к `gsa_geo_pipeline.py`), `keygen_input_xlsx`, `keygen_python` (пусто — текущий), `keygen_batches`, `keygen_target_mb`, `keygen_pages`, `keygen_footprints_per_seed`. Пусто в `keygen_script`/`keygen_input_xlsx` — кейген выключен.
+
+Строки батчей — формат `Seed Operator Footprint` (`loans site:.cz inurl:"…"`), тот же, что читает статистика операторов. **Создание самих заданий в A-Parser (Pro) — вручную/через UI** под подготовленные файлы; здесь только генерация и раскладка.
+
 ## Дебаг (обе версии)
 
 Подробные логи включаются флагом **`--debug`** или `"debug": true` в конфиге (по умолчанию выключено):

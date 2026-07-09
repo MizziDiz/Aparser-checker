@@ -96,6 +96,15 @@ DEFAULTS = {
     "almost_done_pct": 90,        # уведомлять «почти готово», когда задание выполнено на N%
     "eta_window_min": 30,         # окно (мин) снимков для оценки скорости и ETA
 
+    # Кейген (--keygen): генерация батчей запросов и раскладка в queries
+    "keygen_script": "",          # raw-путь к gsa_geo_pipeline.py (соседний проект)
+    "keygen_input_xlsx": "",      # raw-путь к xlsx с ключами
+    "keygen_python": "",          # python для пайплайна (пусто — текущий)
+    "keygen_batches": 5,          # сколько батчей за запуск
+    "keygen_target_mb": 6,        # размер батча, МБ
+    "keygen_pages": 25,           # настройка pages (пишется в manifest пайплайна)
+    "keygen_footprints_per_seed": 24,
+
     "debug": False,               # подробные дебаг-логи (можно и флагом --debug)
 }
 
