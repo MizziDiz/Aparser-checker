@@ -120,6 +120,16 @@ CONFIG_FIELDS: list[dict] = [
      "label": "pages (в manifest пайплайна)", "help": ""},
     {"group": "Кейген", "key": "keygen_footprints_per_seed", "type": "int", "default": 24,
      "label": "Футпринтов на seed", "help": ""},
+
+    # — Автопилот (--autopilot) —
+    {"group": "Автопилот", "key": "autopilot_create_tasks", "type": "bool", "default": False,
+     "label": "Авто-создание заданий", "help": "иначе только уведомление о простое (Phase 1)"},
+    {"group": "Автопилот", "key": "autopilot_template_task", "type": "str", "default": "",
+     "label": "Эталонное задание (шаблон)", "help": "заголовок/подстрока задания для клонирования"},
+    {"group": "Автопилот", "key": "autopilot_start_task", "type": "bool", "default": True,
+     "label": "Запускать созданное задание", "help": "сразу стартовать после создания"},
+    {"group": "Автопилот", "key": "autopilot_max_new_tasks", "type": "int", "default": 1,
+     "label": "Заданий за проход", "help": "сколько создавать за один запуск автопилота"},
 ]
 
 

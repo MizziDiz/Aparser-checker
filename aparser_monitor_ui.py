@@ -363,48 +363,139 @@ def run(cfg, state) -> str:
 # --------------------------------------------------------------------------- #
 # Вспомогательные режимы
 # --------------------------------------------------------------------------- #
-def _count_unused_batches(cfg) -> int:
-    """Батчи = подпапки queries/<имя>/. «Не использованные» — те, для которых нет
-    одноимённой подпапки в results/ (задание ещё не отработало)."""
-    qd, rd = cfg.get("queries_dir", ""), cfg.get("results_dir", "")
-    if not qd:
-        return 0
-    qroot = Path(qd)
-    if not qroot.exists():
-        return 0
-    q_names = {d.name for d in qroot.iterdir() if d.is_dir()}
-    r_names = set()
-    if rd and Path(rd).exists():
-        r_names = {d.name for d in Path(rd).iterdir() if d.is_dir()}
-    return len(q_names - r_names)
+# --------------------------------------------------------------------------- #
+# Автопилот Phase 2: авто-создание заданий под готовые батчи (клон эталона)
+# --------------------------------------------------------------------------- #
+class TaskCreateNotReady(RuntimeError):
+    """Селекторы формы создания/клонирования задания ещё не заданы — нужны дампы
+    экрана Task Editor (--interactive). До этого авто-создание не выполняется."""
+
+
+# Гейт: пока False — авто-создание не пытается кликать по UI (мы не знаем точных
+# ExtJS-селекторов этой сборки). Ставится в True вместе с заполнением CREATE_*-шагов
+# в create_task_from_batch по реальным дампам --interactive.
+CREATE_SELECTORS_READY = False
+
+
+def _batch_files(cfg) -> dict[str, Path]:
+    """{имя_батча: queries/<имя>/<имя>.txt} по раскладке кейгена."""
+    qd = cfg.get("queries_dir", "")
+    out: dict[str, Path] = {}
+    if not qd or not Path(qd).exists():
+        return out
+    for d in Path(qd).iterdir():
+        if d.is_dir():
+            f = d / f"{d.name}.txt"
+            if f.exists():
+                out[d.name] = f
+    return out
+
+
+def _task_exists_for(batch: str, cards: list[dict]) -> bool:
+    """Есть ли уже задание под этот батч — ищем имя батча в заголовке карточки.
+    Опирается на то, что автопилот именует создаваемое задание именем батча."""
+    b = batch.lower()
+    return any(b in (c.get("title", "") or "").lower() for c in cards)
+
+
+def batches_needing_task(cfg, cards: list[dict]) -> list[tuple[str, Path]]:
+    """Батчи, под которые ещё НЕТ задания в очереди и НЕТ готового результата
+    (отсортировано по имени — детерминированный порядок создания)."""
+    rd = cfg.get("results_dir", "")
+    done = {d.name for d in Path(rd).iterdir() if d.is_dir()} if rd and Path(rd).exists() else set()
+    return [(name, f) for name, f in sorted(_batch_files(cfg).items())
+            if name not in done and not _task_exists_for(name, cards)]
+
+
+def create_task_from_batch(page, cfg, batch: str, batch_file: Path, start: bool) -> None:
+    """Клонирует эталонное задание (autopilot_template_task), подменяет источник
+    запросов на batch_file и имя задания на batch, сохраняет и (если start) запускает.
+
+    Требует точных ExtJS-селекторов экрана Task Editor этой сборки A-Parser — снять
+    через --interactive (Copy task + редактор) и вписать шаги ниже, затем поднять
+    CREATE_SELECTORS_READY. До этого поднимает TaskCreateNotReady, и автопилот
+    откатывается на поведение Phase 1 (уведомление о простое)."""
+    if not CREATE_SELECTORS_READY:
+        raise TaskCreateNotReady(
+            "селекторы экрана создания задания не заданы — снимите дампы через "
+            "--interactive (Copy task + Task Editor) и заполните create_task_from_batch")
+    # template = cfg.get("autopilot_template_task", "")
+    # TODO(dumps): по реальным селекторам —
+    #   1) открыть очередь; найти задание `template`; вызвать «Copy/Clone»;
+    #   2) в редакторе клона: источник запросов → batch_file (абсолютный путь);
+    #      имя задания → batch; файл результата → <batch>.txt (совместимо с autosend/stats);
+    #   3) сохранить редактор; если start — запустить задание (кнопка Start/контекст).
+    raise TaskCreateNotReady("реализация ждёт селекторов из дампов --interactive")
+
+
+def _autopilot_create(cfg, state, page, pending: list[tuple[str, Path]], log) -> None:
+    """Пытается создать задания под батчи без задания; при недоступности авто-создания
+    ведёт себя как Phase 1 (уведомление). Проверяет появление заданий в очереди."""
+    create = bool(cfg.get("autopilot_create_tasks", False))
+    template = cfg.get("autopilot_template_task", "")
+    start = bool(cfg.get("autopilot_start_task", True))
+    max_new = max(1, int(cfg.get("autopilot_max_new_tasks", 1) or 1))
+    names = [n for n, _ in pending]
+    log.info(f"autopilot: заданий нет, батчей без задания {len(pending)}: {', '.join(names[:8])}")
+
+    def _notify_idle(reason: str) -> None:
+        if cooldown_ok(state, "autopilot:idle", cfg["cooldown_hours"]):
+            send_telegram(cfg, f"🟡 <b>A-Parser простаивает</b>\n"
+                               f"Батчей без задания: {len(pending)}. Нужно создать задание "
+                               f"({reason}).")
+            mark_sent(state, "autopilot:idle")
+
+    if not create:
+        _notify_idle("авто-создание выключено — autopilot_create_tasks")
+        return
+    if not template:
+        _notify_idle("не задан autopilot_template_task")
+        return
+
+    created = 0
+    for name, f in pending[:max_new]:
+        try:
+            create_task_from_batch(page, cfg, name, f, start)
+            created += 1
+            log.info(f"autopilot: создано задание под батч {name}")
+        except TaskCreateNotReady as e:
+            log.warning(f"autopilot: авто-создание пока недоступно: {e}")
+            _notify_idle("авто-создание ещё не настроено — нужны дампы Task Editor")
+            return
+        except Exception as e:  # noqa: BLE001
+            log.error(f"autopilot: не удалось создать задание под {name}: {type(e).__name__}: {e}")
+            break
+
+    if created:
+        cards2 = collect_cards(page)                    # проверка: задания реально в очереди
+        confirmed = [n for n, _ in pending[:max_new] if _task_exists_for(n, cards2)]
+        send_telegram(cfg, f"🤖 <b>A-Parser: автопилот создал задания ({len(confirmed)})</b>\n"
+                           f"{', '.join(confirmed) or '—'}"
+                           f"\n{'Запущены.' if start else 'Созданы на паузе.'}")
+        prune_state(state, cfg["cooldown_hours"])
 
 
 def run_autopilot(cfg, state, log) -> None:
-    """При простое A-Parser: есть батчи → нужно создать задание (UI, в разработке);
-    нет батчей → запустить кейген. Отдельный режим --autopilot (по расписанию)."""
+    """При простое A-Parser: есть батчи без задания → создать задание (Phase 2, клон
+    эталона) либо уведомить; нет батчей → запустить кейген. Режим --autopilot."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg)
         try:
             cards = collect_cards(page)
+            active = active_count(cards)
+            if active > 0:
+                log.info(f"autopilot: активных заданий {active} — ничего не делаем")
+                return
+            pending = batches_needing_task(cfg, cards)
+            if pending:
+                _autopilot_create(cfg, state, page, pending, log)
+            else:
+                log.info("autopilot: ни заданий, ни батчей — запускаю кейген")
+                from lib.keygen import run_keygen
+                run_keygen(cfg, log)
         finally:
             browser.close()
-    active = active_count(cards)
-    if active > 0:
-        log.info(f"autopilot: активных заданий {active} — ничего не делаем")
-        return
-    unused = _count_unused_batches(cfg)
-    if unused > 0:
-        log.info(f"autopilot: заданий нет, готовых батчей {unused} — нужно создать задание "
-                 f"(UI-автосоздание в разработке)")
-        if cooldown_ok(state, "autopilot:idle", cfg["cooldown_hours"]):
-            send_telegram(cfg, f"🟡 <b>A-Parser простаивает</b>\n"
-                               f"Готовых батчей: {unused}. Нужно создать задание.")
-            mark_sent(state, "autopilot:idle")
-    else:
-        log.info("autopilot: ни заданий, ни батчей — запускаю кейген")
-        from lib.keygen import run_keygen
-        run_keygen(cfg, log)
 
 
 def check(cfg) -> None:

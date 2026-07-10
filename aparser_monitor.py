@@ -107,6 +107,12 @@ DEFAULTS = {
     "keygen_pages": 25,           # настройка pages (пишется в manifest пайплайна)
     "keygen_footprints_per_seed": 24,
 
+    # Автопилот Phase 2 (--autopilot): авто-создание заданий под готовые батчи
+    "autopilot_create_tasks": False,  # вкл авто-создание (иначе только уведомление, как Phase 1)
+    "autopilot_template_task": "",    # заголовок/подстрока эталонного задания для клонирования
+    "autopilot_start_task": True,     # запускать созданное задание сразу
+    "autopilot_max_new_tasks": 1,     # сколько заданий создавать за один проход автопилота
+
     "debug": False,               # подробные дебаг-логи (можно и флагом --debug)
 }
 

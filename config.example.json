@@ -47,5 +47,10 @@
   "keygen_pages": 25,
   "keygen_footprints_per_seed": 24,
 
+  "autopilot_create_tasks": false,
+  "autopilot_template_task": "",
+  "autopilot_start_task": true,
+  "autopilot_max_new_tasks": 1,
+
   "debug": false
 }
