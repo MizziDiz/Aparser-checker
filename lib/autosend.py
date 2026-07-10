@@ -176,7 +176,11 @@ def run_autosend(cfg: dict, state: dict, logger: logging.Logger) -> None:
 
     if sent_now:
         preview = ", ".join(sent_now[:10]) + (" …" if len(sent_now) > 10 else "")
-        send_telegram(cfg, f"📤 <b>A-Parser: результаты отправлены ({len(sent_now)})</b>\n"
-                           f"{preview}\n→ {dest}")
+        if send_telegram(cfg, f"📤 <b>A-Parser: результаты отправлены ({len(sent_now)})</b>\n"
+                              f"{preview}\n→ {dest}"):
+            logger.info(f"autosend: уведомление в Telegram отправлено ({len(sent_now)})")
+        else:
+            logger.warning(f"autosend: уведомление в Telegram НЕ доставлено "
+                           f"({len(sent_now)} рез.) — см. ошибку отправки выше")
     if deleted:
         logger.info(f"autosend: удалено пар задача/результат: {deleted}")

@@ -158,12 +158,19 @@ def maybe_heartbeat(cfg: dict, state: dict, summary: str) -> None:
         return
     now = time.time()
     last = state.get("heartbeat_ts")
-    if last is not None and (now - last) < hours * 3600:
+    if last is None:                            # первый прогон только ставит отметку
+        state["heartbeat_ts"] = now
+        return
+    if (now - last) < hours * 3600:
         return                                  # ещё рано
-    if last is not None:                        # первый прогон только ставит отметку
-        send_telegram(cfg, f"🟢 <b>A-Parser мониторинг: всё ок</b>\n{summary}")
+    # Метку двигаем ТОЛЬКО при успешной доставке — иначе при недоступности релея
+    # heartbeat молча «пропал» бы на N часов; так он повторится на следующем тике.
+    if send_telegram(cfg, f"🟢 <b>A-Parser мониторинг: всё ок</b>\n{summary}"):
+        state["heartbeat_ts"] = now
         get_logger().info(f"heartbeat отправлен — {summary}")
-    state["heartbeat_ts"] = now
+    else:
+        get_logger().warning("heartbeat не доставлен (см. ошибку отправки выше) — "
+                             "метку не двигаем, повторим на следующем тике")
 
 
 # --------------------------------------------------------------------------- #
@@ -370,14 +377,18 @@ def send_telegram(cfg: dict, text: str) -> bool:
     Ошибки НЕ пробрасываем наружу (иначе примутся за недоступность A-Parser) —
     логируем и возвращаем False."""
     text = f"🖥 <b>{server_label(cfg)}</b>\n{text}"
+    relay = cfg.get("telegram_relay_url", "")
     try:
-        if cfg.get("telegram_relay_url"):
+        if relay:
             send_via_relay(cfg, text)
         else:
             send_telegram_direct(cfg, text)
         return True
     except (requests.exceptions.RequestException, RuntimeError, ValueError) as e:
-        print(f"[warn] отправка в Telegram не удалась: {e}", file=sys.stderr)
+        # В лог (файл), а не только в stderr — под Планировщиком Windows stderr теряется,
+        # и причина «сообщения не приходят» иначе остаётся невидимой.
+        where = f"релей {relay}" if relay else "напрямую в Telegram"
+        get_logger().warning(f"отправка в Telegram не удалась ({where}): {type(e).__name__}: {e}")
         return False
 
 
@@ -386,14 +397,24 @@ def test_telegram(cfg: dict) -> int:
     результат — HTTP-код и ответ Telegram, чтобы отличить проблему токена/chat_id/сети."""
     relay = cfg.get("telegram_relay_url", "")
     if relay:
-        print(f"через релей: {relay}")
-        ok = send_telegram(cfg, "✅ aparser_monitor: проверка связи через релей")
-        if ok:
+        secret = cfg.get("relay_secret", "")
+        print(f"через релей: {relay}  (secret={'задан' if secret else 'ПУСТ'}, "
+              f"url={relay.rstrip('/') + '/send'})")
+        try:
+            send_via_relay(cfg, f"🖥 {server_label(cfg)}\n✅ проверка связи через релей")
             print("OK — сообщение принято релеем и отправлено, проверьте чат.")
             return 0
-        print("ОШИБКА: релей недоступен или отклонил запрос (проверьте telegram_relay_url, "
-              "relay_secret, что релей запущен и порт открыт в локальной сети).")
-        return 1
+        except requests.exceptions.RequestException as e:
+            print(f"ОШИБКА сети/таймаута до релея: {type(e).__name__}: {e}")
+            print("Релей не отвечает: не запущен, не тот telegram_relay_url/relay_port, "
+                  "не открыт порт в фаерволе, или клиент не в relay_allowed_ips.")
+            return 1
+        except (RuntimeError, ValueError) as e:
+            # релей ответил, но отклонил/ошибся — здесь виден его текст ошибки
+            print(f"ОШИБКА от релея: {e}")
+            print("Релей доступен, но отклонил: обычно неверный relay_secret, либо у самого "
+                  "релея не проходит отправка в Telegram (проверьте --test-telegram на релее).")
+            return 1
     proxy = cfg.get("telegram_proxy", "")
     print(f"chat_id={cfg['telegram_chat_id']!r}, "
           f"token=…{str(cfg['telegram_bot_token'])[-6:]} (последние 6 символов), "
