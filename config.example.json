@@ -51,6 +51,9 @@
   "autopilot_template_task": "",
   "autopilot_start_task": true,
   "autopilot_max_new_tasks": 1,
+  "autopilot_config_preset": "",
+  "autopilot_dry_run": true,
+  "aparser_root": "",
 
   "debug": false
 }

@@ -130,6 +130,12 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Запускать созданное задание", "help": "сразу стартовать после создания"},
     {"group": "Автопилот", "key": "autopilot_max_new_tasks", "type": "int", "default": 1,
      "label": "Заданий за проход", "help": "сколько создавать за один запуск автопилота"},
+    {"group": "Автопилот", "key": "autopilot_config_preset", "type": "str", "default": "",
+     "label": "Config preset", "help": "напр. 200t; пусто — не менять"},
+    {"group": "Автопилот", "key": "autopilot_dry_run", "type": "bool", "default": True,
+     "label": "Dry-run (обкатка)", "help": "заполнить форму и снять скрин, но не добавлять задание"},
+    {"group": "Автопилот", "key": "aparser_root", "type": "str", "default": "",
+     "label": "Корень A-Parser", "help": "для путей запросов; пусто — из exe/queries_dir"},
 ]
 
 

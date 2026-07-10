@@ -361,87 +361,195 @@ def run(cfg, state) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Вспомогательные режимы
-# --------------------------------------------------------------------------- #
-# --------------------------------------------------------------------------- #
-# Автопилот Phase 2: авто-создание заданий под готовые батчи (клон эталона)
+# Автопилот Phase 2: авто-создание заданий под наборы батчей (через Task preset)
+# Набор = подпапка queries/<группа>/ с файлами батчей; одно задание = один набор
+# (все .txt набора идут в источник запросов одного задания).
 # --------------------------------------------------------------------------- #
 class TaskCreateNotReady(RuntimeError):
-    """Селекторы формы создания/клонирования задания ещё не заданы — нужны дампы
-    экрана Task Editor (--interactive). До этого авто-создание не выполняется."""
+    """Не удалось найти элемент формы создания задания (другой язык UI / изменилась
+    вёрстка). Автопилот трактует это как «создать не смог» и откатывается на Phase 1."""
 
 
-# Гейт: пока False — авто-создание не пытается кликать по UI (мы не знаем точных
-# ExtJS-селекторов этой сборки). Ставится в True вместе с заполнением CREATE_*-шагов
-# в create_task_from_batch по реальным дампам --interactive.
-CREATE_SELECTORS_READY = False
+class TaskCreateDryRun(RuntimeError):
+    """Dry-run: форма заполнена и снят скрин, но задание намеренно НЕ добавлено."""
 
 
-def _batch_files(cfg) -> dict[str, Path]:
-    """{имя_батча: queries/<имя>/<имя>.txt} по раскладке кейгена."""
+# Реализация create_task_from_set готова (по дампам Task Editor v1.2.3293). Первый
+# боевой запуск всё равно держите в autopilot_dry_run=true и сверьте скрин-превью:
+# статическая вёрстка не проверяет живое поведение ExtJS (комбо/загрузка пресета).
+CREATE_SELECTORS_READY = True
+
+# JS: по тексту подписи поля вернуть id его input (пара …-labelEl/…-inputEl с общим
+# префиксом — тот же инвариант ExtJS, что в CARDS_JS; устойчивее плавающих id).
+FIELD_INPUT_JS = r"""
+(label) => {
+  const want = label.replace(/:$/, '').trim();
+  for (const l of document.querySelectorAll('[id$="-labelEl"]')) {
+    const t = (l.innerText || l.textContent || '').replace(/:$/, '').trim();
+    if (t === want) {
+      const inp = document.getElementById(l.id.replace(/-labelEl$/, '') + '-inputEl');
+      if (inp) return inp.id;
+    }
+  }
+  return null;
+}
+"""
+
+# JS: выбрать радио «Queries from: File» (стабильный name="queriesFrom", ищем по boxLabel).
+SELECT_FILE_RADIO_JS = r"""
+() => {
+  for (const inp of document.querySelectorAll('input[name="queriesFrom"]')) {
+    const item = inp.closest('.x-form-item, .x-field');
+    const lab = item ? (item.innerText || '').trim() : '';
+    if (/^file$/i.test(lab)) { inp.click(); return true; }
+  }
+  return false;
+}
+"""
+
+# JS: клик по кнопке загрузки Task preset (иконка справа от поля). Ищем ExtJS-кнопку
+# в той же строке, что и подпись «Task preset». Не критично: часть сборок грузит
+# пресет уже при выборе в комбо — поэтому отсутствие кнопки не считаем ошибкой.
+LOAD_PRESET_JS = r"""
+() => {
+  const lab = [...document.querySelectorAll('[id$="-labelEl"]')]
+    .find(l => /^task preset$/i.test((l.innerText||'').replace(/:$/,'').trim()));
+  if (!lab) return false;
+  const row = lab.closest('.x-form-item, .x-field, tr, .x-box-inner') || lab.parentElement;
+  const btn = row && (row.querySelector('.x-btn') ||
+              (row.parentElement && row.parentElement.querySelector('.x-btn')));
+  if (btn) { btn.click(); return true; }
+  return false;
+}
+"""
+
+
+def _field_input(page, label):
+    iid = page.evaluate(FIELD_INPUT_JS, label)
+    if not iid:
+        raise TaskCreateNotReady(f"поле по подписи '{label}' не найдено — сверьте язык UI/дампы")
+    return page.locator(f"#{iid}")
+
+
+def _set_combo(page, label, value: str) -> None:
+    """ExtJS-комбо: вписать значение и выбрать одноимённый пункт из выпадающего списка."""
+    inp = _field_input(page, label)
+    inp.click()
+    inp.fill(value)
+    page.wait_for_timeout(300)
+    try:
+        page.locator(".x-boundlist-item").get_by_text(value, exact=True).first.click(timeout=2500)
+    except Exception:
+        inp.press("Enter")                      # запасной путь, если списка нет
+
+
+def _aparser_rel_path(cfg, path: Path) -> str:
+    """Путь к файлу запросов так, как его ждёт UI: относительно корня A-Parser,
+    прямыми слэшами (напр. 'queries/brave/B0001_….txt')."""
+    p = Path(path)
+    root = cfg.get("aparser_root", "") or (
+        str(Path(cfg["aparser_exe_path"]).parent) if cfg.get("aparser_exe_path") else "")
+    for base in (root, str(Path(cfg["queries_dir"]).parent) if cfg.get("queries_dir") else ""):
+        if base:
+            try:
+                return p.resolve().relative_to(Path(base).resolve()).as_posix()
+            except (ValueError, OSError):
+                pass
+    return p.name
+
+
+def create_task_from_set(page, cfg, set_name: str, files: list[Path], start: bool) -> None:
+    """Создаёт задание под набор в Task Editor: грузит Task preset (autopilot_template_task),
+    ставит источник запросов = все файлы набора (через запятую), добавляет в очередь и
+    (если start) запускает. Парсер/конфиг/потоки/имя результата ($queriesfile) — от пресета.
+
+    При autopilot_dry_run форма заполняется и снимается скрин, но задание НЕ добавляется
+    (raise TaskCreateDryRun). Не найден элемент — TaskCreateNotReady (откат на Phase 1)."""
+    if not CREATE_SELECTORS_READY:
+        raise TaskCreateNotReady("create_task_from_set отключён (CREATE_SELECTORS_READY)")
+    template = cfg.get("autopilot_template_task", "")
+    if not template:
+        raise TaskCreateNotReady("не задан autopilot_template_task (имя Task preset)")
+    if not files:
+        raise TaskCreateNotReady(f"набор {set_name} пуст")
+    log = get_logger()
+
+    page.get_by_text("Task Editor", exact=True).first.click()   # 1) открыть редактор
+    page.wait_for_timeout(600)
+
+    cpre = cfg.get("autopilot_config_preset", "")               # 2) пресеты
+    if cpre:
+        _set_combo(page, "Config preset", cpre)
+    _set_combo(page, "Task preset", template)
+    page.evaluate(LOAD_PRESET_JS)                               # применить пресет (если есть кнопка)
+    page.wait_for_timeout(700)
+
+    if not page.evaluate(SELECT_FILE_RADIO_JS):                 # 3) Queries from: File
+        raise TaskCreateNotReady("радио 'Queries from: File' не найдено")
+    rel = ", ".join(_aparser_rel_path(cfg, f) for f in files)   # все файлы набора через запятую
+    _field_input(page, "Select File").fill(rel)
+    log.info(f"autopilot: форма под набором {set_name}: preset={template}, файлов={len(files)}")
+    # File name = $queriesfile наследуется от пресета — не трогаем.
+
+    if bool(cfg.get("autopilot_dry_run", True)):               # обкатка: только скрин
+        shot = DATA_DIR / "ui_dumps" / f"autopilot_preview_{set_name}.png"
+        shot.parent.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(shot), full_page=True)
+        raise TaskCreateDryRun(f"dry-run: превью под {set_name} → {shot}; задание не добавлено")
+
+    page.get_by_text("Add Task", exact=True).first.click()     # 4) в очередь
+    page.wait_for_timeout(1000)
+    if start:                                                  # 5) запустить
+        try:
+            page.get_by_text("Run", exact=True).first.click(timeout=3000)
+        except Exception:
+            pass
+
+
+def _query_sets(cfg) -> dict[str, list[Path]]:
+    """{имя_набора: [файлы .txt]} — набор = подпапка queries/<группа>/ с батч-файлами.
+    Раскладка кейгена (папка с одним файлом) — частный случай набора из одного файла."""
     qd = cfg.get("queries_dir", "")
-    out: dict[str, Path] = {}
+    out: dict[str, list[Path]] = {}
     if not qd or not Path(qd).exists():
         return out
-    for d in Path(qd).iterdir():
+    for d in sorted(Path(qd).iterdir()):
         if d.is_dir():
-            f = d / f"{d.name}.txt"
-            if f.exists():
-                out[d.name] = f
+            files = sorted(f for f in d.iterdir() if f.is_file() and f.suffix.lower() == ".txt")
+            if files:
+                out[d.name] = files
     return out
 
 
-def _task_exists_for(batch: str, cards: list[dict]) -> bool:
-    """Есть ли уже задание под этот батч — ищем имя батча в заголовке карточки.
-    Опирается на то, что автопилот именует создаваемое задание именем батча."""
-    b = batch.lower()
+def _task_exists_for(name: str, cards: list[dict]) -> bool:
+    """Есть ли уже задание под этот набор — ищем имя набора в заголовке карточки очереди."""
+    b = name.lower()
     return any(b in (c.get("title", "") or "").lower() for c in cards)
 
 
-def batches_needing_task(cfg, cards: list[dict]) -> list[tuple[str, Path]]:
-    """Батчи, под которые ещё НЕТ задания в очереди и НЕТ готового результата
-    (отсортировано по имени — детерминированный порядок создания)."""
+def sets_needing_task(cfg, cards: list[dict]) -> list[tuple[str, list[Path]]]:
+    """Наборы, под которые ещё НЕТ задания в очереди и НЕТ готового результата
+    (папка results/<имя_набора>/). Порядок — по имени набора (детерминированно)."""
     rd = cfg.get("results_dir", "")
     done = {d.name for d in Path(rd).iterdir() if d.is_dir()} if rd and Path(rd).exists() else set()
-    return [(name, f) for name, f in sorted(_batch_files(cfg).items())
+    return [(name, files) for name, files in _query_sets(cfg).items()
             if name not in done and not _task_exists_for(name, cards)]
 
 
-def create_task_from_batch(page, cfg, batch: str, batch_file: Path, start: bool) -> None:
-    """Клонирует эталонное задание (autopilot_template_task), подменяет источник
-    запросов на batch_file и имя задания на batch, сохраняет и (если start) запускает.
-
-    Требует точных ExtJS-селекторов экрана Task Editor этой сборки A-Parser — снять
-    через --interactive (Copy task + редактор) и вписать шаги ниже, затем поднять
-    CREATE_SELECTORS_READY. До этого поднимает TaskCreateNotReady, и автопилот
-    откатывается на поведение Phase 1 (уведомление о простое)."""
-    if not CREATE_SELECTORS_READY:
-        raise TaskCreateNotReady(
-            "селекторы экрана создания задания не заданы — снимите дампы через "
-            "--interactive (Copy task + Task Editor) и заполните create_task_from_batch")
-    # template = cfg.get("autopilot_template_task", "")
-    # TODO(dumps): по реальным селекторам —
-    #   1) открыть очередь; найти задание `template`; вызвать «Copy/Clone»;
-    #   2) в редакторе клона: источник запросов → batch_file (абсолютный путь);
-    #      имя задания → batch; файл результата → <batch>.txt (совместимо с autosend/stats);
-    #   3) сохранить редактор; если start — запустить задание (кнопка Start/контекст).
-    raise TaskCreateNotReady("реализация ждёт селекторов из дампов --interactive")
-
-
-def _autopilot_create(cfg, state, page, pending: list[tuple[str, Path]], log) -> None:
-    """Пытается создать задания под батчи без задания; при недоступности авто-создания
+def _autopilot_create(cfg, state, page, pending: list[tuple[str, list[Path]]], log) -> None:
+    """Пытается создать задания под наборы без задания; при недоступности авто-создания
     ведёт себя как Phase 1 (уведомление). Проверяет появление заданий в очереди."""
     create = bool(cfg.get("autopilot_create_tasks", False))
     template = cfg.get("autopilot_template_task", "")
     start = bool(cfg.get("autopilot_start_task", True))
     max_new = max(1, int(cfg.get("autopilot_max_new_tasks", 1) or 1))
     names = [n for n, _ in pending]
-    log.info(f"autopilot: заданий нет, батчей без задания {len(pending)}: {', '.join(names[:8])}")
+    log.info(f"autopilot: заданий нет, наборов без задания {len(pending)}: {', '.join(names[:8])}")
 
     def _notify_idle(reason: str) -> None:
         if cooldown_ok(state, "autopilot:idle", cfg["cooldown_hours"]):
             send_telegram(cfg, f"🟡 <b>A-Parser простаивает</b>\n"
-                               f"Батчей без задания: {len(pending)}. Нужно создать задание "
+                               f"Наборов без задания: {len(pending)}. Нужно создать задание "
                                f"({reason}).")
             mark_sent(state, "autopilot:idle")
 
@@ -453,14 +561,17 @@ def _autopilot_create(cfg, state, page, pending: list[tuple[str, Path]], log) ->
         return
 
     created = 0
-    for name, f in pending[:max_new]:
+    for name, files in pending[:max_new]:
         try:
-            create_task_from_batch(page, cfg, name, f, start)
+            create_task_from_set(page, cfg, name, files, start)
             created += 1
-            log.info(f"autopilot: создано задание под батч {name}")
+            log.info(f"autopilot: создано задание под набор {name}")
+        except TaskCreateDryRun as e:
+            log.info(f"autopilot: {e}")          # обкатка: скрин снят, задание не добавлено
+            return
         except TaskCreateNotReady as e:
-            log.warning(f"autopilot: авто-создание пока недоступно: {e}")
-            _notify_idle("авто-создание ещё не настроено — нужны дампы Task Editor")
+            log.warning(f"autopilot: авто-создание недоступно: {e}")
+            _notify_idle("авто-создание не отработало — сверьте UI/дампы")
             return
         except Exception as e:  # noqa: BLE001
             log.error(f"autopilot: не удалось создать задание под {name}: {type(e).__name__}: {e}")
@@ -487,13 +598,40 @@ def run_autopilot(cfg, state, log) -> None:
             if active > 0:
                 log.info(f"autopilot: активных заданий {active} — ничего не делаем")
                 return
-            pending = batches_needing_task(cfg, cards)
+            pending = sets_needing_task(cfg, cards)
             if pending:
                 _autopilot_create(cfg, state, page, pending, log)
             else:
-                log.info("autopilot: ни заданий, ни батчей — запускаю кейген")
+                log.info("autopilot: ни заданий, ни наборов — запускаю кейген")
                 from lib.keygen import run_keygen
                 run_keygen(cfg, log)
+        finally:
+            browser.close()
+
+
+def run_autopilot_test(cfg, log) -> None:
+    """Живая обкатка автосоздания на первом батче без задания: ВИДИМЫЙ браузер,
+    принудительный dry-run (форма заполняется, снимается скрин, задание НЕ добавляется).
+    Для проверки селекторов на реальной машине перед включением autopilot_create_tasks."""
+    from playwright.sync_api import sync_playwright
+    cfg = dict(cfg)
+    cfg["autopilot_dry_run"] = True                 # тест всегда безопасен
+    with sync_playwright() as pw:
+        browser, page = open_ui(pw, cfg, headless=False)
+        try:
+            pending = sets_needing_task(cfg, collect_cards(page))
+            if not pending:
+                log.info("autopilot-test: нет наборов без задания — нечего создавать")
+                return
+            name, files = pending[0]
+            log.info(f"autopilot-test: заполняю форму под набор {name} ({len(files)} файлов)")
+            try:
+                create_task_from_set(page, cfg, name, files, start=False)
+            except TaskCreateDryRun as e:
+                log.info(f"autopilot-test: OK — {e}")
+            except TaskCreateNotReady as e:
+                log.error(f"autopilot-test: элемент не найден — {e}")
+            page.wait_for_timeout(2000)             # дать посмотреть на форму
         finally:
             browser.close()
 
@@ -639,6 +777,9 @@ def main() -> int:
     if "--keygen" in sys.argv:
         from lib.keygen import run_keygen
         run_keygen(cfg, log)
+        return 0
+    if "--autopilot-test" in sys.argv:
+        run_autopilot_test(cfg, log)
         return 0
     if "--autopilot" in sys.argv:
         state = load_state()

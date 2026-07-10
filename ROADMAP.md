@@ -36,6 +36,8 @@ Phase 2 (**авто-создание задания через UI**, метод 
 - [x] каркас: выбор батчей без задания, идемпотентность (по очереди и по results),
   ограничение `autopilot_max_new_tasks`, проверка появления задания, конфиг-ключи
   (`autopilot_create_tasks`/`autopilot_template_task`/`autopilot_start_task`/`autopilot_max_new_tasks`);
-- [ ] `create_task_from_batch`: реальные ExtJS-селекторы (Copy task → редактор клона:
-  источник запросов, имя, файл результата → сохранить → запустить). **Нужны дампы
-  экранов через `--interactive`**; после них поднять `CREATE_SELECTORS_READY`.
+- [x] `create_task_from_batch`: реализован через Task Editor (загрузка Task preset +
+  Config preset, Queries→File, путь к батчу, Add Task/Run), поля по подписи в рантайме;
+  dry-run + команда `--autopilot-test` (видимый браузер, скрин-превью без добавления);
+- [ ] живая обкатка `--autopilot-test` на реальной машине — подстроить селекторы
+  комбо/загрузки пресета, если сборка отличается; затем `autopilot_dry_run=false`.

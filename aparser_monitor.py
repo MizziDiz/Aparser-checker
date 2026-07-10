@@ -112,6 +112,9 @@ DEFAULTS = {
     "autopilot_template_task": "",    # заголовок/подстрока эталонного задания для клонирования
     "autopilot_start_task": True,     # запускать созданное задание сразу
     "autopilot_max_new_tasks": 1,     # сколько заданий создавать за один проход автопилота
+    "autopilot_config_preset": "",    # Config preset в редакторе (напр. "200t"); пусто — не трогать
+    "autopilot_dry_run": True,        # заполнить форму и снять скрин, но НЕ добавлять/запускать (обкатка)
+    "aparser_root": "",               # корень A-Parser для путей запросов; пусто — из aparser_exe_path/queries_dir
 
     "debug": False,               # подробные дебаг-логи (можно и флагом --debug)
 }
