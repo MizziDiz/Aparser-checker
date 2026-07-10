@@ -822,6 +822,16 @@ def main() -> int:
         finally:
             save_state(state)
         return 0
+    if "--autosend" in sys.argv:
+        # Только отправка результатов на шару (без UI-мониторинга и детекта завершения).
+        # Для узлов при централизованном мониторинге: монитор ведёт контроллер, а
+        # autosend (файловая операция с локальными результатами) остаётся на узле.
+        state = load_state()
+        try:
+            run_autosend(cfg, state, log)
+        finally:
+            save_state(state)
+        return 0
     state = load_state()
     try:
         try:
