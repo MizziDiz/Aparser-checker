@@ -20,6 +20,7 @@
   "cooldown_hours": 8,
   "min_requests": 20,
   "heartbeat_hours": 6,
+  "completion_confirm_reads": 2,
 
   "ui_nav_timeout_ms": 30000,
   "ui_cards_timeout_ms": 20000,

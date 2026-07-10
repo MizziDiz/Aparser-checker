@@ -64,6 +64,8 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Кулдаун уведомлений, ч", "help": "Не спамить одним типом чаще"},
     {"group": "Пороги и поведение", "key": "heartbeat_hours", "type": "float", "default": 6,
      "label": "Heartbeat «всё ок», ч", "help": "0 — выключить"},
+    {"group": "Пороги и поведение", "key": "completion_confirm_reads", "type": "int", "default": 2,
+     "label": "Подтверждений «завершено»", "help": "сколько проходов подряд с 0 активных до события"},
     {"group": "Пороги и поведение", "key": "request_timeout", "type": "int", "default": 30,
      "label": "Таймаут запросов, с", "help": ""},
     {"group": "Пороги и поведение", "key": "ui_nav_timeout_ms", "type": "int", "default": 30000,

@@ -257,21 +257,37 @@ def collect_cards(page, cfg: dict | None = None, max_pages: int = 25) -> list[di
 # Уведомления
 # --------------------------------------------------------------------------- #
 def notify_completion(cfg, state, active: int, total: int) -> None:
-    """Событие «парсинг завершён» = число незавершённых заданий упало с >0 до 0."""
+    """Событие «парсинг завершён» = незавершённых заданий было >0 и УСТОЙЧИВО стало 0.
+    Защита от ложного нуля: единичное пустое чтение (гонка рендера ExtJS / сбой по WAN)
+    завершением НЕ считается — требуется подтверждение `completion_confirm_reads`
+    проходами подряд (по умолчанию 2). Иначе флейковый 0 при живых заданиях слал ложное
+    «завершено» (частый случай при удалённом чтении)."""
+    confirm = max(1, int(cfg.get("completion_confirm_reads", 2) or 2))
     prev = state.get("ui_active_prev")
-    if prev is not None and prev > 0 and active == 0:
+    seen = state.get("ui_seen_active", False)
+    streak = state.get("ui_zero_streak", 0)
+    if active > 0:
+        seen = True
+        streak = 0
+    else:
+        streak += 1
+    # завершение только когда: раньше видели активные, теперь 0 подтверждён N раз подряд
+    if seen and active == 0 and streak >= confirm:
         key = "done:ui"
         if cooldown_ok(state, key, cfg["cooldown_hours"]):
             send_telegram(
                 cfg,
                 f"✅ <b>A-Parser: парсинг завершён</b>\n"
-                f"Незавершённых заданий не осталось (было {prev}).",
+                f"Незавершённых заданий не осталось (подтверждено {streak} проверками).",
             )
             mark_sent(state, key)
             print("[done] parsing finished")
+        seen = False                            # не повторять, пока не появятся новые задания
+    state["ui_seen_active"] = seen
+    state["ui_zero_streak"] = streak
     state["ui_active_prev"] = active
     prune_state(state, cfg["cooldown_hours"])
-    print(f"[ok] active={active}/{total} prev={prev}")
+    print(f"[ok] active={active}/{total} prev={prev} zero_streak={streak}")
 
 
 def notify_errors(cfg, state, cards: list[dict]) -> int:
