@@ -114,6 +114,9 @@ def load_ui_config() -> dict:
     cfg["min_requests"] = int(float(cfg["min_requests"]))
     cfg["heartbeat_hours"] = float(cfg.get("heartbeat_hours", 0) or 0)
     cfg["relay_port"] = int(float(cfg.get("relay_port", 8899) or 8899))
+    for k, dflt in (("ui_nav_timeout_ms", 30000), ("ui_cards_timeout_ms", 20000),
+                    ("ui_page_change_ms", 6000)):
+        cfg[k] = int(float(cfg.get(k, dflt) or dflt))
     for k in ("telegram_bot_token", "telegram_chat_id"):
         if not cfg.get(k):
             sys.exit(f"Не задан обязательный параметр: {k}. Заполните {CONFIG_PATH.name}.")
@@ -122,17 +125,18 @@ def load_ui_config() -> dict:
 
 def open_ui(pw, cfg, headless: bool = True):
     """Открывает интерфейс, логинится при необходимости, ждёт загрузки приложения."""
+    nav = int(cfg.get("ui_nav_timeout_ms", 30000) or 30000)
     browser = pw.chromium.launch(headless=headless)
     page = browser.new_page()
-    page.goto(cfg["aparser_ui_url"], wait_until="domcontentloaded", timeout=30000)
+    page.goto(cfg["aparser_ui_url"], wait_until="domcontentloaded", timeout=nav)
     if page.query_selector(LOGIN_PASSWORD):
         page.fill(LOGIN_PASSWORD, cfg["aparser_ui_password"])
         page.click(LOGIN_SUBMIT)
-        page.wait_for_load_state("domcontentloaded", timeout=30000)
+        page.wait_for_load_state("domcontentloaded", timeout=nav)
     # ждём, пока ExtJS отрисует нижнюю статус-строку (признак загрузки приложения)
     page.wait_for_function(
         r"() => document.body && /Tasks:\s*\d+\s*\/\s*\d+/.test(document.body.innerText)",
-        timeout=30000,
+        timeout=nav,
     )
     return browser, page
 
@@ -206,16 +210,22 @@ def active_count(cards: list[dict]) -> int:
     return sum(1 for c in cards if (c["status"] or "").lower() not in DONE_STATUSES)
 
 
-def collect_cards(page, max_pages: int = 25) -> list[dict]:
+def collect_cards(page, cfg: dict | None = None, max_pages: int = 25) -> list[dict]:
     """Заходит в Tasks Queue, обходит все страницы, собирает уникальные карточки.
-    Стоп — когда следующая страница не даёт новых заданий (последняя)."""
+    Стоп — когда следующая страница не даёт новых заданий (последняя).
+    Таймауты берутся из cfg (для удалённых узлов — увеличенные)."""
+    cfg = cfg or {}
+    cards_to = int(cfg.get("ui_cards_timeout_ms", 20000) or 20000)
+    change_ms = int(cfg.get("ui_page_change_ms", 6000) or 6000)
+    click_to = int(cfg.get("ui_nav_timeout_ms", 30000) or 30000)
     try:
-        page.get_by_text("Tasks Queue", exact=True).first.click(timeout=5000)
+        page.get_by_text("Tasks Queue", exact=True).first.click(timeout=min(click_to, 10000))
     except Exception:
         pass
     cards, seen = [], set()
+    attempts = max(1, change_ms // 200)
     for _ in range(max_pages):
-        wait_cards_ready(page)                 # дождаться заполнения живых полей
+        wait_cards_ready(page, cards_to)       # дождаться заполнения живых полей
         debug_log_cards(page)                  # при --debug: сырые поля проблемных карточек
         cur = extract_cards(page)
         titles = [c["title"] for c in cur]
@@ -233,7 +243,7 @@ def collect_cards(page, max_pages: int = 25) -> list[dict]:
         # ждём, пока список заданий реально сменится; если не сменился —
         # это была последняя страница (кнопка next неактивна)
         changed = False
-        for _ in range(25):                    # до ~5 c
+        for _ in range(attempts):
             page.wait_for_timeout(200)
             if [c["title"] for c in extract_cards(page)] != titles:
                 changed = True
@@ -336,7 +346,7 @@ def run(cfg, state) -> str:
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg)
         try:
-            cards = collect_cards(page)
+            cards = collect_cards(page, cfg)
         finally:
             browser.close()
     if state.get("down"):
@@ -578,7 +588,7 @@ def _autopilot_create(cfg, state, page, pending: list[tuple[str, list[Path]]], l
             break
 
     if created:
-        cards2 = collect_cards(page)                    # проверка: задания реально в очереди
+        cards2 = collect_cards(page, cfg)                    # проверка: задания реально в очереди
         confirmed = [n for n, _ in pending[:max_new] if _task_exists_for(n, cards2)]
         send_telegram(cfg, f"🤖 <b>A-Parser: автопилот создал задания ({len(confirmed)})</b>\n"
                            f"{', '.join(confirmed) or '—'}"
@@ -593,7 +603,7 @@ def run_autopilot(cfg, state, log) -> None:
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg)
         try:
-            cards = collect_cards(page)
+            cards = collect_cards(page, cfg)
             active = active_count(cards)
             if active > 0:
                 log.info(f"autopilot: активных заданий {active} — ничего не делаем")
@@ -619,7 +629,7 @@ def run_autopilot_test(cfg, log) -> None:
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg, headless=False)
         try:
-            pending = sets_needing_task(cfg, collect_cards(page))
+            pending = sets_needing_task(cfg, collect_cards(page, cfg))
             if not pending:
                 log.info("autopilot-test: нет наборов без задания — нечего создавать")
                 return
@@ -642,7 +652,7 @@ def check(cfg) -> None:
     with sync_playwright() as pw:
         browser, page = open_ui(pw, cfg)
         try:
-            cards = collect_cards(page)
+            cards = collect_cards(page, cfg)
         finally:
             browser.close()
     active = active_count(cards)
@@ -671,7 +681,7 @@ def dump(cfg) -> None:
             page.get_by_text("Tasks Queue", exact=True).first.click(timeout=5000)
         except Exception:
             pass
-        wait_cards_ready(page)
+        wait_cards_ready(page, int(cfg.get("ui_cards_timeout_ms", 20000) or 20000))
         out_html.write_text(page.content(), encoding="utf-8")
         page.screenshot(path=str(out_png), full_page=True)
         raw = page.evaluate(CARDS_JS)
@@ -750,6 +760,14 @@ def interactive(cfg) -> None:
 
 
 def main() -> int:
+    # --config <путь>: работать с конкретным конфигом узла (и его state/логом рядом).
+    # Позволяет из одной точки (контроллера) вести несколько узлов, не смешивая состояние.
+    if "--config" in sys.argv:
+        i = sys.argv.index("--config")
+        if i + 1 >= len(sys.argv):
+            sys.exit("--config требует путь к файлу конфига")
+        import aparser_monitor as _am
+        _am.set_config_path(sys.argv[i + 1])
     cfg = load_ui_config()
     log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
     if "--test-telegram" in sys.argv:

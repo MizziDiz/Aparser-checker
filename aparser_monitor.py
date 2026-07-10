@@ -56,6 +56,19 @@ def ensure_data_dir() -> None:
 
 ensure_data_dir()
 
+
+def set_config_path(cfg_path) -> None:
+    """Переключает активный конфиг и ПРОИЗВОДНЫЕ state/log на файл рядом с ним
+    (для централизованного запуска нескольких узлов из одной точки: у каждого узла
+    свой конфиг → свой state/лог, чтобы heartbeat/детект-завершения/кулдауны не
+    смешивались). Вызывать ДО первого get_logger/load_state."""
+    global CONFIG_PATH, STATE_PATH, LOG_PATH
+    p = Path(cfg_path)
+    CONFIG_PATH = p
+    STATE_PATH = p.with_suffix(".state.json")
+    LOG_PATH = p.with_suffix(".log")
+
+
 DEFAULTS = {
     # http://IP:PORT/API — адрес API A-Parser (порт по умолчанию 9091)
     "aparser_url": "http://127.0.0.1:9091/API",

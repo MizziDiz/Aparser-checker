@@ -66,6 +66,12 @@ CONFIG_FIELDS: list[dict] = [
      "label": "Heartbeat «всё ок», ч", "help": "0 — выключить"},
     {"group": "Пороги и поведение", "key": "request_timeout", "type": "int", "default": 30,
      "label": "Таймаут запросов, с", "help": ""},
+    {"group": "Пороги и поведение", "key": "ui_nav_timeout_ms", "type": "int", "default": 30000,
+     "label": "Таймаут навигации UI, мс", "help": "логин/загрузка; для удалённых узлов больше"},
+    {"group": "Пороги и поведение", "key": "ui_cards_timeout_ms", "type": "int", "default": 20000,
+     "label": "Ожидание карточек очереди, мс", "help": "SPA дольше рендерится по WAN"},
+    {"group": "Пороги и поведение", "key": "ui_page_change_ms", "type": "int", "default": 6000,
+     "label": "Ожидание смены страницы, мс", "help": "пагинация Tasks Queue"},
     {"group": "Пороги и поведение", "key": "debug", "type": "bool", "default": False,
      "label": "Подробные логи (debug)", "help": "Дебаг-логи; можно и флагом --debug"},
 

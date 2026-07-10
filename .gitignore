@@ -16,6 +16,10 @@ ui_first_cards.html
 __pycache__/
 *.pyc
 
+# виртуальное окружение (на контроллере/сервере)
+.venv/
+venv/
+
 # сборка PyInstaller (редактор настроек)
 build/
 dist/

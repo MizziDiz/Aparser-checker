@@ -21,6 +21,10 @@
   "min_requests": 20,
   "heartbeat_hours": 6,
 
+  "ui_nav_timeout_ms": 30000,
+  "ui_cards_timeout_ms": 20000,
+  "ui_page_change_ms": 6000,
+
   "aparser_exe_path": "C:\\A-Parser\\aparser.exe",
   "restart_after_failures": 3,
   "restart_cooldown_min": 15,
