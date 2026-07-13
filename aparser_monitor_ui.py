@@ -405,14 +405,23 @@ class TaskCreateDryRun(RuntimeError):
 # статическая вёрстка не проверяет живое поведение ExtJS (комбо/загрузка пресета).
 CREATE_SELECTORS_READY = True
 
-# JS: по тексту подписи поля вернуть id его input (пара …-labelEl/…-inputEl с общим
-# префиксом — тот же инвариант ExtJS, что в CARDS_JS; устойчивее плавающих id).
+# Подписи полей/навигации/кнопок редактора — интерфейс A-Parser бывает на EN и на RU
+# (на части серверов русский). Держим оба варианта; резолвер сопоставляет любой из них.
+LBL_CONFIG_PRESET = ("Config preset", "Конфиг потоков")
+LBL_TASK_PRESET = ("Task preset", "Задание")
+LBL_SELECT_FILE = ("Select File", "Выберите файл")
+NAV_TASK_EDITOR = ("Task Editor", "Редактор заданий")
+BTN_ADD_TASK = ("Add Task", "Добавить задание")
+BTN_RUN = ("Run", "Запустить", "Создать")
+
+# JS: по одной из подписей поля (EN/RU) вернуть id его input (пара …-labelEl/…-inputEl
+# с общим префиксом — тот же инвариант ExtJS, что в CARDS_JS; устойчивее плавающих id).
 FIELD_INPUT_JS = r"""
-(label) => {
-  const want = label.replace(/:$/, '').trim();
+(labels) => {
+  const wants = labels.map(s => s.replace(/:$/, '').trim());
   for (const l of document.querySelectorAll('[id$="-labelEl"]')) {
     const t = (l.innerText || l.textContent || '').replace(/:$/, '').trim();
-    if (t === want) {
+    if (wants.includes(t)) {
       const inp = document.getElementById(l.id.replace(/-labelEl$/, '') + '-inputEl');
       if (inp) return inp.id;
     }
@@ -421,25 +430,42 @@ FIELD_INPUT_JS = r"""
 }
 """
 
-# JS: выбрать радио «Queries from: File» (стабильный name="queriesFrom", ищем по boxLabel).
+# JS: выбрать радио «Queries from: File» / «Запросы из: Файл». Имя группы у разных
+# сборок разное (queriesFrom / from), и «Файл» есть и у результатов («Сохранить в»).
+# Поэтому берём группу радио, где есть И File/Файл, И Text/Текст (это источник запросов),
+# и кликаем в ней File/Файл (клик по boxLabel — чтобы ExtJS зарегистрировал).
 SELECT_FILE_RADIO_JS = r"""
 () => {
-  for (const inp of document.querySelectorAll('input[name="queriesFrom"]')) {
-    const item = inp.closest('.x-form-item, .x-field');
-    const lab = item ? (item.innerText || '').trim() : '';
-    if (/^file$/i.test(lab)) { inp.click(); return true; }
+  const boxLabel = (inp) => {
+    const base = (inp.id || '').replace(/-inputEl$/, '');
+    const lab = base ? document.getElementById(base + '-boxLabelEl') : null;
+    return { el: lab, t: (lab ? lab.innerText : '').trim() };
+  };
+  const groups = {};
+  for (const r of document.querySelectorAll('input[type=radio]')) {
+    (groups[r.name] = groups[r.name] || []).push(r);
+  }
+  for (const name in groups) {
+    const grp = groups[name];
+    const labs = grp.map(boxLabel);
+    const hasFile = labs.some(x => /^(file|файл)$/i.test(x.t));
+    const hasText = labs.some(x => /^(text|текст)$/i.test(x.t));
+    if (hasFile && hasText) {
+      for (let i = 0; i < grp.length; i++) {
+        if (/^(file|файл)$/i.test(labs[i].t)) { (labs[i].el || grp[i]).click(); return true; }
+      }
+    }
   }
   return false;
 }
 """
 
-# JS: клик по кнопке загрузки Task preset (иконка справа от поля). Ищем ExtJS-кнопку
-# в той же строке, что и подпись «Task preset». Не критично: часть сборок грузит
-# пресет уже при выборе в комбо — поэтому отсутствие кнопки не считаем ошибкой.
+# JS: клик по кнопке загрузки Task preset (иконка справа от поля «Task preset»/«Задание»).
+# Не критично: часть сборок грузит пресет уже при выборе в комбо — отсутствие кнопки не ошибка.
 LOAD_PRESET_JS = r"""
 () => {
   const lab = [...document.querySelectorAll('[id$="-labelEl"]')]
-    .find(l => /^task preset$/i.test((l.innerText||'').replace(/:$/,'').trim()));
+    .find(l => /^(task preset|задание)$/i.test((l.innerText||'').replace(/:$/,'').trim()));
   if (!lab) return false;
   const row = lab.closest('.x-form-item, .x-field, tr, .x-box-inner') || lab.parentElement;
   const btn = row && (row.querySelector('.x-btn') ||
@@ -450,16 +476,52 @@ LOAD_PRESET_JS = r"""
 """
 
 
-def _field_input(page, label):
-    iid = page.evaluate(FIELD_INPUT_JS, label)
+# JS: задать значение ExtJS-компонента по id (для readonly-комбо «Выберите файл» —
+# в него нельзя печатать; setValue принимает массив путей, т.к. комбо мультизначное).
+SET_COMBO_VALUE_JS = r"""
+(args) => {
+  const [cmpId, value] = args;
+  if (typeof Ext === 'undefined') return false;
+  const c = Ext.getCmp(cmpId);
+  if (!c || !c.setValue) return false;
+  c.setValue(value);
+  return true;
+}
+"""
+
+
+def _set_file_field(page, labels, paths: list[str]) -> None:
+    """Задаёт readonly-комбо «Выберите файл»/«Select File» через ExtJS setValue
+    (печать невозможна). paths — список путей (комбо мультизначное)."""
+    iid = page.evaluate(FIELD_INPUT_JS, list(labels))
     if not iid:
-        raise TaskCreateNotReady(f"поле по подписи '{label}' не найдено — сверьте язык UI/дампы")
+        raise TaskCreateNotReady(f"поле {labels} не найдено — сверьте язык UI/дампы")
+    cmp_id = iid[:-len("-inputEl")] if iid.endswith("-inputEl") else iid
+    if not page.evaluate(SET_COMBO_VALUE_JS, [cmp_id, paths]):
+        raise TaskCreateNotReady(f"не удалось задать {labels} через ExtJS setValue")
+
+
+def _click_text(page, variants, timeout: int = 8000) -> bool:
+    """Клик по первому найденному тексту из вариантов (EN/RU). True — если кликнули."""
+    for t in variants:
+        try:
+            page.get_by_text(t, exact=True).first.click(timeout=timeout)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _field_input(page, labels):
+    iid = page.evaluate(FIELD_INPUT_JS, list(labels))
+    if not iid:
+        raise TaskCreateNotReady(f"поле по подписи {labels} не найдено — сверьте язык UI/дампы")
     return page.locator(f"#{iid}")
 
 
-def _set_combo(page, label, value: str) -> None:
+def _set_combo(page, labels, value: str) -> None:
     """ExtJS-комбо: вписать значение и выбрать одноимённый пункт из выпадающего списка."""
-    inp = _field_input(page, label)
+    inp = _field_input(page, labels)
     inp.click()
     inp.fill(value)
     page.wait_for_timeout(300)
@@ -500,20 +562,22 @@ def create_task_from_set(page, cfg, set_name: str, files: list[Path], start: boo
         raise TaskCreateNotReady(f"набор {set_name} пуст")
     log = get_logger()
 
-    page.get_by_text("Task Editor", exact=True).first.click()   # 1) открыть редактор
-    page.wait_for_timeout(600)
+    nav_to = int(cfg.get("ui_nav_timeout_ms", 30000) or 30000)
+    if not _click_text(page, NAV_TASK_EDITOR, timeout=min(nav_to, 10000)):  # 1) открыть редактор
+        raise TaskCreateNotReady("не найден пункт меню 'Task Editor'/'Редактор заданий'")
+    page.wait_for_timeout(800)
 
     cpre = cfg.get("autopilot_config_preset", "")               # 2) пресеты
     if cpre:
-        _set_combo(page, "Config preset", cpre)
-    _set_combo(page, "Task preset", template)
+        _set_combo(page, LBL_CONFIG_PRESET, cpre)
+    _set_combo(page, LBL_TASK_PRESET, template)
     page.evaluate(LOAD_PRESET_JS)                               # применить пресет (если есть кнопка)
-    page.wait_for_timeout(700)
+    page.wait_for_timeout(800)
 
-    if not page.evaluate(SELECT_FILE_RADIO_JS):                 # 3) Queries from: File
-        raise TaskCreateNotReady("радио 'Queries from: File' не найдено")
-    rel = ", ".join(_aparser_rel_path(cfg, f) for f in files)   # все файлы набора через запятую
-    _field_input(page, "Select File").fill(rel)
+    if not page.evaluate(SELECT_FILE_RADIO_JS):                 # 3) Queries from: File / Запросы из: Файл
+        raise TaskCreateNotReady("радио 'File'/'Файл' (queriesFrom) не найдено")
+    rel = [_aparser_rel_path(cfg, f) for f in files]            # все файлы набора (мультизначное комбо)
+    _set_file_field(page, LBL_SELECT_FILE, rel)
     log.info(f"autopilot: форма под набором {set_name}: preset={template}, файлов={len(files)}")
     # File name = $queriesfile наследуется от пресета — не трогаем.
 
@@ -523,13 +587,11 @@ def create_task_from_set(page, cfg, set_name: str, files: list[Path], start: boo
         page.screenshot(path=str(shot), full_page=True)
         raise TaskCreateDryRun(f"dry-run: превью под {set_name} → {shot}; задание не добавлено")
 
-    page.get_by_text("Add Task", exact=True).first.click()     # 4) в очередь
+    if not _click_text(page, BTN_ADD_TASK, timeout=8000):      # 4) в очередь
+        raise TaskCreateNotReady("кнопка 'Add Task'/'Добавить задание' не найдена")
     page.wait_for_timeout(1000)
-    if start:                                                  # 5) запустить
-        try:
-            page.get_by_text("Run", exact=True).first.click(timeout=3000)
-        except Exception:
-            pass
+    if start:                                                  # 5) запустить (best-effort)
+        _click_text(page, BTN_RUN, timeout=3000)
 
 
 def _query_sets(cfg) -> dict[str, list[Path]]:
