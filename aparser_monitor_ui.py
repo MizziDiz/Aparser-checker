@@ -519,16 +519,56 @@ def _field_input(page, labels):
     return page.locator(f"#{iid}")
 
 
-def _set_combo(page, labels, value: str) -> None:
-    """ExtJS-комбо: вписать значение и выбрать одноимённый пункт из выпадающего списка."""
-    inp = _field_input(page, labels)
-    inp.click()
-    inp.fill(value)
-    page.wait_for_timeout(300)
-    try:
-        page.locator(".x-boundlist-item").get_by_text(value, exact=True).first.click(timeout=2500)
-    except Exception:
-        inp.press("Enter")                      # запасной путь, если списка нет
+# JS: выбрать в комбо запись с ТОЧНЫМ именем из его стора (без typeahead, который
+# ловит префикс: 'aparser' → 'aparser bing'). Возвращает список доступных, если нет.
+SELECT_PRESET_JS = r"""
+(args) => {
+  const [cmpId, value] = args;
+  const c = Ext.getCmp(cmpId);
+  if (!c || !c.getStore) return {ok: false, err: 'combo not found'};
+  const df = c.displayField;
+  const avail = c.getStore().getRange().map(r => r.get(df));
+  const idx = avail.findIndex(v => v === value);
+  if (idx < 0) return {ok: false, avail};
+  c.select(c.getStore().getAt(idx));
+  return {ok: true};
+}
+"""
+
+# JS: выгрузить имена пресетов из сторов комбо «Задание» и «Конфиг потоков» (EN/RU).
+PRESET_STORES_JS = r"""
+() => {
+  const combo = (names) => {
+    for (const l of document.querySelectorAll('[id$="-labelEl"]')) {
+      const t = (l.innerText || '').replace(/:$/, '').trim();
+      if (names.includes(t)) {
+        const inp = document.getElementById(l.id.replace(/-labelEl$/, '') + '-inputEl');
+        if (inp) { const c = Ext.getCmp(inp.id.replace('-inputEl', ''));
+                   if (c && c.getStore) return c; }
+      }
+    }
+    return null;
+  };
+  const dump = (c) => c ? c.getStore().getRange().map(r => r.get(c.displayField)) : [];
+  return {
+    task: dump(combo(['Task preset', 'Задание'])),
+    config: dump(combo(['Config preset', 'Конфиг потоков'])),
+  };
+}
+"""
+
+
+def _select_preset(page, labels, value: str) -> None:
+    """Выбирает пресет в комбо по ТОЧНОМУ имени из его стора. Нет имени —
+    TaskCreateNotReady со списком доступных (чтобы было видно, что задать)."""
+    iid = page.evaluate(FIELD_INPUT_JS, list(labels))
+    if not iid:
+        raise TaskCreateNotReady(f"комбо {labels} не найдено — сверьте язык UI/дампы")
+    cmp_id = iid[:-len("-inputEl")] if iid.endswith("-inputEl") else iid
+    res = page.evaluate(SELECT_PRESET_JS, [cmp_id, value])
+    if not res.get("ok"):
+        avail = res.get("avail")
+        raise TaskCreateNotReady(f"пресет '{value}' не найден в {labels}; доступны: {avail}")
 
 
 def _aparser_rel_path(cfg, path: Path) -> str:
@@ -567,10 +607,10 @@ def create_task_from_set(page, cfg, set_name: str, files: list[Path], start: boo
         raise TaskCreateNotReady("не найден пункт меню 'Task Editor'/'Редактор заданий'")
     page.wait_for_timeout(800)
 
-    cpre = cfg.get("autopilot_config_preset", "")               # 2) пресеты
+    cpre = cfg.get("autopilot_config_preset", "")               # 2) пресеты (точный выбор из стора)
     if cpre:
-        _set_combo(page, LBL_CONFIG_PRESET, cpre)
-    _set_combo(page, LBL_TASK_PRESET, template)
+        _select_preset(page, LBL_CONFIG_PRESET, cpre)
+    _select_preset(page, LBL_TASK_PRESET, template)
     page.evaluate(LOAD_PRESET_JS)                               # применить пресет (если есть кнопка)
     page.wait_for_timeout(800)
 
@@ -724,6 +764,27 @@ def run_autopilot_test(cfg, log) -> None:
             browser.close()
 
 
+def list_presets(cfg, log) -> None:
+    """Читает из стора Task Editor доступные Task/Config-пресеты узла и печатает их —
+    чтобы задать точное имя в autopilot_template_task. Режим --list-presets."""
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        browser, page = open_ui(pw, cfg)
+        try:
+            _click_text(page, NAV_TASK_EDITOR,
+                        timeout=int(cfg.get("ui_nav_timeout_ms", 30000) or 30000))
+            page.wait_for_timeout(1200)
+            data = page.evaluate(PRESET_STORES_JS)
+        finally:
+            browser.close()
+    who = cfg.get("server_name") or cfg.get("aparser_ui_url", "")
+    tasks = data.get("task") or []
+    confs = data.get("config") or []
+    print(f"[{who}] Task preset ({len(tasks)}): {', '.join(tasks) or '—'}")
+    print(f"[{who}] Конфиг потоков ({len(confs)}): {', '.join(confs) or '—'}")
+    log.info(f"presets: task={tasks}; config={confs}")
+
+
 def check(cfg) -> None:
     """Диагностика: показать разобранные карточки и кто вызовет тревогу, без отправки."""
     from playwright.sync_api import sync_playwright
@@ -873,6 +934,9 @@ def main() -> int:
     if "--keygen" in sys.argv:
         from lib.keygen import run_keygen
         run_keygen(cfg, log)
+        return 0
+    if "--list-presets" in sys.argv:
+        list_presets(cfg, log)
         return 0
     if "--autopilot-test" in sys.argv:
         run_autopilot_test(cfg, log)
