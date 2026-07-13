@@ -512,6 +512,29 @@ def _click_text(page, variants, timeout: int = 8000) -> bool:
     return False
 
 
+# JS: клик по ExtJS-кнопке (.x-btn) с ТОЧНЫМ текстом из вариантов (EN/RU). Надёжнее
+# get_by_text: в редакторе несколько элементов содержат «задание» (навигация, «Тест
+# задания» …), и Playwright-локатор цеплял не ту/скрытую кнопку.
+CLICK_BTN_JS = r"""
+(labels) => {
+  const wants = labels.map(s => s.trim().toLowerCase());
+  for (const btn of document.querySelectorAll('.x-btn')) {
+    const t = (btn.innerText || '').trim().toLowerCase();
+    if (wants.includes(t) && !btn.classList.contains('x-btn-disabled')) {
+      const r = btn.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) { btn.click(); return true; }
+    }
+  }
+  return false;
+}
+"""
+
+
+def _click_btn(page, variants) -> bool:
+    """Клик по ExtJS-кнопке по точному тексту (видимой, не disabled). True — если кликнули."""
+    return bool(page.evaluate(CLICK_BTN_JS, list(variants)))
+
+
 def _field_input(page, labels):
     iid = page.evaluate(FIELD_INPUT_JS, list(labels))
     if not iid:
@@ -627,11 +650,11 @@ def create_task_from_set(page, cfg, set_name: str, files: list[Path], start: boo
         page.screenshot(path=str(shot), full_page=True)
         raise TaskCreateDryRun(f"dry-run: превью под {set_name} → {shot}; задание не добавлено")
 
-    if not _click_text(page, BTN_ADD_TASK, timeout=8000):      # 4) в очередь
+    if not _click_btn(page, BTN_ADD_TASK):                     # 4) в очередь (JS-клик по .x-btn)
         raise TaskCreateNotReady("кнопка 'Add Task'/'Добавить задание' не найдена")
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(1200)
     if start:                                                  # 5) запустить (best-effort)
-        _click_text(page, BTN_RUN, timeout=3000)
+        _click_btn(page, BTN_RUN)
 
 
 def _query_sets(cfg) -> dict[str, list[Path]]:
@@ -947,6 +970,10 @@ def main() -> int:
             run_autopilot(cfg, state, log)
         finally:
             save_state(state)
+        return 0
+    if "--autosend-check" in sys.argv:
+        from lib.autosend import check_autosend
+        check_autosend(cfg, log)
         return 0
     if "--autosend" in sys.argv:
         # Только отправка результатов на шару (без UI-мониторинга и детекта завершения).
