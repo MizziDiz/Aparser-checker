@@ -29,3 +29,17 @@ aparser-config.exe
 # артефакты кейгена (генерятся при запуске пайплайна)
 keygen/parser_batches/
 query_dedupe.sqlite
+
+# автономный раннер добычи — содержит LAN-IP узла и путь к SMB-кредам (инфра)
+harvest_runner.py
+data/harvest/
+
+# инфра/операционка — содержат реальные LAN-IP, роли узлов, пути к кредам. НЕ коммитить.
+# (gitignore не поддерживает inline-комментарии — паттерны отдельными строками)
+harvest_healthcheck.py
+harvest_seedmine.py
+aparser-guard.bat
+HANDOFF.md
+data/ops/
+.env
+.smbcreds*

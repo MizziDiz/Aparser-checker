@@ -30,7 +30,7 @@ from aparser_monitor import send_telegram_direct
 
 
 def _parse_networks(spec: str) -> list:
-    """Разбирает relay_allowed_ips ('10.10.10.0/24, 1.2.3.4') в список сетей."""
+    """Разбирает relay_allowed_ips ('192.0.2.0/24, 1.2.3.4') в список сетей."""
     nets = []
     for part in (spec or "").replace(";", ",").split(","):
         part = part.strip()
