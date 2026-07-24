@@ -730,23 +730,20 @@ def run_task(pw, parser: str, set_name: str, lines: list[str], profile: str | No
              master: set[str], engine: str, source: str = "",
              task_preset: str | None = None) -> dict | None:
     deploy(set_name, lines)
-    dest = WORK / set_name / f"{set_name}.result.txt"
-    ui_done = False
-    t_wait = time.time()
     b, page = ui.open_ui(pw, UI_CFG, headless=True)
     try:
         page.wait_for_function("typeof Ext !== 'undefined'", timeout=120000)
         create_task(page, parser, set_name, WORK / set_name / f"{set_name}.txt",
                     profile, task_preset=task_preset)
-        # Фаза 2: держим сессию открытой и ждём ЗАВЕРШЕНИЯ по очереди UI (корректный сигнал).
-        ui_done = wait_task_done(page, set_name)
     finally:
         b.close()
-    # ui_done или уже долго ждали (задача стухла) → wait_settled лишь быстро подтверждает файл
-    # (180с). Ранний UI-сбой (задача, скорее всего, ещё жива) → прежний путь по всему таймауту.
-    fb = 180 if (ui_done or time.time() - t_wait > 300) else RESULT_WAIT_S
-    if not wait_settled(set_name, dest, timeout=fb):
-        print(f"  [{engine}] {set_name}: результат не получен (ui_done={ui_done})")
+    # ЗАВЕРШЕНИЕ ждём по стабилизации файла (fetch ВО ВРЕМЯ задачи). Детекция по очереди UI
+    # (wait_task_done) ОТКЛЮЧЕНА: включён delete-on-complete → результат удаляется СРАЗУ по
+    # завершении задачи, и фетч после ui_done не находит файл (раунды 362/363 дали ноль).
+    # Компромисс: недосчёт крупных Yahoo-задач (частичный fetch), но GSA берёт полный с шары.
+    dest = WORK / set_name / f"{set_name}.result.txt"
+    if not wait_settled(set_name, dest):
+        print(f"  [{engine}] {set_name}: результат не получен/не стабилизировался за {RESULT_WAIT_S}с")
         cleanup_node(set_name)
         return None
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
