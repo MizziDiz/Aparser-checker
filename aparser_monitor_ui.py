@@ -218,10 +218,9 @@ def collect_cards(page, cfg: dict | None = None, max_pages: int = 25) -> list[di
     cards_to = int(cfg.get("ui_cards_timeout_ms", 20000) or 20000)
     change_ms = int(cfg.get("ui_page_change_ms", 6000) or 6000)
     click_to = int(cfg.get("ui_nav_timeout_ms", 30000) or 30000)
-    try:
-        page.get_by_text("Tasks Queue", exact=True).first.click(timeout=min(click_to, 10000))
-    except Exception:
-        pass
+    # навигация на вкладку очереди — двуязычно (RU «Очередь заданий» / EN «Tasks Queue»);
+    # нужно, когда заходим из другого вида (напр. Редактора заданий, как в wait_task_done).
+    _click_text(page, ("Tasks Queue", "Очередь заданий"), timeout=min(click_to, 10000))
     cards, seen = [], set()
     attempts = max(1, change_ms // 200)
     for _ in range(max_pages):

@@ -666,35 +666,60 @@ def wait_settled(set_name: str, dest: Path, timeout: int = RESULT_WAIT_S) -> boo
             # ждёт полный timeout, тогда пуст-легитимно.
             if sz > 0 and sz == prev:
                 stable += 1
-                # 8×15с=120с плато без роста = задача дописала. Раньше было 3 (45с), но
-                # медленные Yahoo-задачи (3000 запросов) делают паузы >45с при переборе/
-                # ожидании прокси — это принималось за «готово», и раннер забирал ЧАСТИЧНЫЙ
-                # результат (недосчёт Yahoo: 76 вместо 4613). 120с надёжнее отделяет паузу
-                # от завершения. Brave/футпринты стримят ровно — на них это не влияет.
-                if stable >= 8:
+                # ФОЛБЭК-эвристика: осн. сигнал завершения — очередь UI (wait_task_done).
+                # Плато 45с как «дописано»; путь используется, только если UI-детекция
+                # недоступна (после ui_done wait_settled лишь быстро подтверждает файл).
+                if stable >= 3:
                     return True
             else:
                 stable, prev = 0, sz
     return dest.exists()
 
 
+def wait_task_done(page, set_name: str, timeout: int = RESULT_WAIT_S) -> bool:
+    """Фаза 2: ждёт завершения задачи по ОЧЕРЕДИ UI (корректный сигнал), а не по плато файла.
+    Раннер ставит одну задачу и ждёт её; узел гонит только наши задачи → active_count==0
+    (после того как задачу ВИДЕЛИ активной) = готово. True — дождались; False — таймаут/
+    UI-сбой/задача так и не появилась (тогда фолбэк на wait_settled по файлу)."""
+    t0, zero, seen = time.time(), 0, False
+    while time.time() - t0 < timeout:
+        try:
+            a = ui.active_count(ui.collect_cards(page, UI_CFG))
+        except PWError:
+            return False                       # UI сломался → фолбэк на file-stability
+        if a >= 1:
+            seen, zero = True, 0               # задача в работе
+        elif seen:
+            zero += 1                           # была активна, теперь 0 → завершается
+            if zero >= 2:
+                return True
+        elif time.time() - t0 > 240:
+            return False                        # 4 мин без активной задачи → фолбэк
+        page.wait_for_timeout(20000)            # опрос очереди каждые 20с
+    return False
+
+
 def run_task(pw, parser: str, set_name: str, lines: list[str], profile: str | None,
              master: set[str], engine: str, source: str = "",
              task_preset: str | None = None) -> dict | None:
     deploy(set_name, lines)
+    dest = WORK / set_name / f"{set_name}.result.txt"
+    ui_done = False
+    t_wait = time.time()
     b, page = ui.open_ui(pw, UI_CFG, headless=True)
     try:
         page.wait_for_function("typeof Ext !== 'undefined'", timeout=120000)
         create_task(page, parser, set_name, WORK / set_name / f"{set_name}.txt",
                     profile, task_preset=task_preset)
+        # Фаза 2: держим сессию открытой и ждём ЗАВЕРШЕНИЯ по очереди UI (корректный сигнал).
+        ui_done = wait_task_done(page, set_name)
     finally:
         b.close()
-    # (раньше тут было удаление queries-папки через 4с — ломало DDG на 200 сидов:
-    #  A-Parser не успевал прочитать файл → "Queries file not exists". Убрано.)
-    # ждём ЗАВЕРШЕНИЯ (стабилизации файла), а не первого появления
-    dest = WORK / set_name / f"{set_name}.result.txt"
-    if not wait_settled(set_name, dest):
-        print(f"  [{engine}] {set_name}: результат не получен/не стабилизировался за {RESULT_WAIT_S}с")
+    # ui_done или уже долго ждали (задача стухла) → wait_settled лишь быстро подтверждает файл
+    # (180с). Ранний UI-сбой (задача, скорее всего, ещё жива) → прежний путь по всему таймауту.
+    fb = 180 if (ui_done or time.time() - t_wait > 300) else RESULT_WAIT_S
+    if not wait_settled(set_name, dest, timeout=fb):
+        print(f"  [{engine}] {set_name}: результат не получен (ui_done={ui_done})")
         cleanup_node(set_name)
         return None
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
