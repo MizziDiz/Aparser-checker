@@ -113,7 +113,7 @@ BRAVE_BATCH = 2000      # голых сидов+кавычки-футпринт�
 GZ_BATCH = 20000        # URL в файле-результате ≥ этого → пишем .txt.gz (экономия места)
 RESULT_WAIT_S = 2700    # ждать до 45 мин: крупная задача settl-ится дольше (растущий файл)
 
-STATE = OUT / "state.json"
+STATE = OUT / f"state-{NODE_ID}.json"   # ПЕР-УЗЛОВОЙ: параллельные раунды не топчут общий файл
 CSV_LOG = OUT / "harvest_log.csv"
 MASTER = OUT / "domains_master.txt"     # все уникальные домены за всё время
 
@@ -590,7 +590,9 @@ def load_state() -> dict:
 
 
 def save_state(s: dict) -> None:
-    STATE.write_text(json.dumps(s, indent=1))
+    tmp = STATE.with_suffix(".json.tmp")     # атомарно: temp + rename (не повредить при сбое/гонке)
+    tmp.write_text(json.dumps(s, indent=1))
+    tmp.replace(STATE)
 
 
 def slice_cyclic(items: list, cur: int, n: int) -> tuple[list, int]:
