@@ -37,8 +37,6 @@ data/harvest/
 # harvest_runner.py вынесен в паблик-версию: инфра вынесена в data/nodes/harvest_node.json
 # (см. harvest_node.example.json). Реальный конфиг узла — ниже, gitignored.
 data/nodes/harvest_node.json
-harvest_healthcheck.py
-harvest_seedmine.py
 aparser-guard.bat
 HANDOFF.md
 data/ops/
