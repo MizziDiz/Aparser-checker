@@ -68,7 +68,24 @@ def score_prospect(url: str) -> tuple[int, str]:
 # Инфра узла (LAN-IP, путь к SMB-кредам, пути A-Parser) — в gitignored
 # data/nodes/harvest_node.json. Плейсхолдеры-шаблон — data/nodes/harvest_node.example.json.
 # Пересоздать при потере: data/ops/recreate-creds.sh
-_NODE_CFG = Path(__file__).resolve().parent / "data" / "nodes" / "harvest_node.json"
+_NODES_DIR = Path(__file__).resolve().parent / "data" / "nodes"
+
+
+def _node_cfg_path() -> Path:
+    """Выбор узла: --node N → harvest_node-N.json; без --node — harvest_node.json (.14)."""
+    nid = ""
+    if "--node" in sys.argv:
+        i = sys.argv.index("--node")
+        if i + 1 < len(sys.argv):
+            nid = sys.argv[i + 1]
+    if nid:
+        p = _NODES_DIR / f"harvest_node-{nid}.json"
+        if p.exists():
+            return p
+    return _NODES_DIR / "harvest_node.json"
+
+
+_NODE_CFG = _node_cfg_path()
 NODE = json.loads(_NODE_CFG.read_text(encoding="utf-8")) if _NODE_CFG.exists() else {
     "smb": "//<LAN-IP>/C$", "creds": "/root/.smbcreds<N>",
     "queries_unc": r"soft\aparser\queries", "results_unc": r"soft\aparser\results",
@@ -381,8 +398,15 @@ SELECT_TASKPRESET_JS = """(name)=>{const cs=Ext.ComponentQuery.query('combo').fi
   /^(Задание|Task preset)$/i.test((c.getFieldLabel&&c.getFieldLabel())||'')&&c.isVisible(true));
   if(!cs.length)return false;const c=cs[0];const r=c.getStore().findRecord(c.displayField,name);
   if(!r)return false;c.select(r);c.fireEvent('select',c,r);return true;}"""
-TP_YAHOO = "Aparser yahoo"     # task-пресет .14 (парсер SE::Yahoo + конфиг aparser)
-TP_BRAVE = "Aparser brave"     # task-пресет .14 (парсер SE::Brave + конфиг aparser)
+# task-пресеты ПО УЗЛУ (имена заведены по-разному): .14 «Aparser yahoo/brave»,
+# .2 «Yahoo/Brave aparser», .13 «yahoo/brave aparser» (строчными). Метка комбо кросс-язык
+# (RU «Задание»/EN «Task preset») — в SELECT_TASKPRESET_JS. Оба пресета вяжут конфиг `aparser`.
+_TP_MAP = {
+    "14": ("Aparser yahoo", "Aparser brave"),
+    "2":  ("Yahoo aparser", "Brave aparser"),
+    "13": ("yahoo aparser", "brave aparser"),
+}
+TP_YAHOO, TP_BRAVE = _TP_MAP.get(NODE_ID, ("Aparser yahoo", "Aparser brave"))
 FINALIZE_JS = r"""(fmt)=>{
   const set=(re,val)=>{const f=Ext.ComponentQuery.query('field').filter(f=>re.test(
     (f.getFieldLabel&&f.getFieldLabel())||'')&&f.isVisible(true))[0];if(f)f.setValue(val);};
@@ -599,7 +623,9 @@ def _zone(domain: str) -> str:
 
 
 def db_conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=30)           # busy_timeout: ждать снятия блокировки (мультиузел)
+    c.execute("PRAGMA journal_mode=WAL")          # конкурентные читатели+писатель — узлы параллельно
+    c.execute("PRAGMA busy_timeout=30000")
     # схема со скорингом+хэшем+источником: URL хранится ХЭШЕМ (экономия места), плюс
     # source (откуда: ddg/yahoo/footprint/brave), ts (когда), score/family (проспект-скоринг).
     c.execute("""CREATE TABLE IF NOT EXISTS results(
@@ -989,6 +1015,7 @@ def show_status() -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--node", help="узел: 2/13/14 (по умолчанию 14 = harvest_node.json)")
     ap.add_argument("--round", action="store_true", help="один раунд добычи")
     ap.add_argument("--status", action="store_true", help="показать прогресс")
     ap.add_argument("--report", action="store_true", help="аналитика: ключи/операторы/зоны/домены")
