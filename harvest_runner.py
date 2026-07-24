@@ -424,6 +424,14 @@ SELECT_TASKPRESET_JS = """(name)=>{
   try{combo.collapse();}catch(e){}
   const r=combo.getStore().findRecord(combo.displayField,name);
   if(!r)return false;combo.select(r);combo.fireEvent('select',combo,r);return true;}"""
+# Конфиг ПОТОКОВ («Config preset», напр. 200t) — классический комбо (не модалка). Best-effort:
+# если пресета нет на узле — вернёт false, таск создастся на дефолтном конфиге потоков.
+SELECT_CONFIGPRESET_JS = """(name)=>{
+  const cs=Ext.ComponentQuery.query('combobox,combo').filter(c=>c.isVisible(true)&&
+    /^config preset$/i.test((c.getFieldLabel&&c.getFieldLabel())||''));
+  if(!cs.length)return false;const combo=cs[0];
+  const r=combo.getStore().findRecord(combo.displayField,name);
+  if(!r)return false;combo.select(r);combo.fireEvent('select',combo,r);return true;}"""
 # task-пресеты ПО УЗЛУ (имена заведены по-разному): .14 «Aparser yahoo/brave»,
 # .2 «Yahoo/Brave aparser», .13 «yahoo/brave aparser» (строчными). Метка комбо кросс-язык
 # (RU «Задание»/EN «Task preset») — в SELECT_TASKPRESET_JS. Оба пресета вяжут конфиг `aparser`.
@@ -433,6 +441,7 @@ _TP_MAP = {
     "13": ("yahoo aparser", "brave aparser"),
 }
 TP_YAHOO, TP_BRAVE = _TP_MAP.get(NODE_ID, ("Aparser yahoo", "Aparser brave"))
+CONFIG_PRESET = "200t"   # конфиг ПОТОКОВ (200 threads) — задаётся отдельно от task-пресета; best-effort
 FINALIZE_JS = r"""(fmt)=>{
   const set=(re,val)=>{const f=Ext.ComponentQuery.query('field').filter(f=>re.test(
     (f.getFieldLabel&&f.getFieldLabel())||'')&&f.isVisible(true))[0];if(f)f.setValue(val);};
@@ -505,6 +514,8 @@ def create_task(page, parser: str, set_name: str, local_file: Path,
                 # КРИТИЧНО: модалка грузит пресет асинхронно — ждём, пока парсер станет ожидаемым,
                 # иначе Add захватит состояние ДО загрузки (таск уходил на SE::Google/default).
                 _wait_or_sleep(page, PARSER_APPLIED_JS, parser, fallback=2500)
+                # конфиг ПОТОКОВ (200t) — отдельно от task-пресета; best-effort (нет — дефолт)
+                page.evaluate(SELECT_CONFIGPRESET_JS, CONFIG_PRESET)
             else:
                 _wait_or_sleep(page, PARSER_READY_JS)        # стор комбо «Парсер/Parser» загружен
                 if not page.evaluate(SET_PARSER_JS, parser):
