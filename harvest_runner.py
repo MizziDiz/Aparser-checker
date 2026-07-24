@@ -893,6 +893,19 @@ def prioritize(candidates: list[str], source: str, batch: int) -> list[str]:
     return sorted(candidates, key=score, reverse=True)[:batch]
 
 
+def _run_task_safe(pw, *args, **kw):
+    """run_task с перехватом сбоя: транзиентный UI-флейк (напр. «Task Editor не открылся»)
+    одного таска НЕ должен ронять весь раунд — иначе теряются остальные движки, grow_pool
+    и write_targets. Пропускаем проблемный таск, раунд продолжается."""
+    setn = args[1] if len(args) > 1 else "?"
+    engine = args[5] if len(args) > 5 else "?"
+    try:
+        return run_task(pw, *args, **kw)
+    except Exception as e:
+        print(f"  [{engine}] {setn}: ТАСК ПРОПУЩЕН — сбой {type(e).__name__}: {str(e)[:80]}")
+        return None
+
+
 def do_round() -> None:
     st = load_state()
     st["round"] += 1
@@ -909,21 +922,25 @@ def do_round() -> None:
 
     with sync_playwright() as pw:
         if DDG_ENABLED and ddg_seeds:
-            run_task(pw, "SE::DuckDuckGo", f"{NODE_ID}_h_ddg_{stamp}", ddg_seeds, None, master, "ddg", "ddg")
+            _run_task_safe(pw, "SE::DuckDuckGo", f"{NODE_ID}_h_ddg_{stamp}", ddg_seeds, None, master, "ddg", "ddg")
         if yh_lines:
-            run_task(pw, "SE::Yahoo", f"{NODE_ID}_h_yah_{stamp}", yh_lines, None, master, "yahoo", "yahoo", task_preset=TP_YAHOO)
+            _run_task_safe(pw, "SE::Yahoo", f"{NODE_ID}_h_yah_{stamp}", yh_lines, None, master, "yahoo", "yahoo", task_preset=TP_YAHOO)
         fp_q = prioritize(build_footprint_queries(), "footprint", FOOTPRINT_BATCH)
         if fp_q:
-            run_task(pw, "SE::Yahoo", f"{NODE_ID}_h_fp_{stamp}", fp_q, None, master, "yahoo", "footprint", task_preset=TP_YAHOO)
+            _run_task_safe(pw, "SE::Yahoo", f"{NODE_ID}_h_fp_{stamp}", fp_q, None, master, "yahoo", "footprint", task_preset=TP_YAHOO)
         # РОТАЦИЯ: случайная выборка сидов вместо статичного prioritize('ddg') — иначе
         # Suggest жевал одни и те же топ-N каждый раунд → все подсказки известны → пул стоял.
         _sd = build_seeds()
-        added = grow_pool(pw, random.sample(_sd, min(SUGGEST_BATCH, len(_sd))), stamp)
+        try:
+            added = grow_pool(pw, random.sample(_sd, min(SUGGEST_BATCH, len(_sd))), stamp)
+        except Exception as e:
+            print(f"  [suggest] пропуск — сбой {type(e).__name__}: {str(e)[:60]}")
+            added = 0
         print(f"  [suggest] +{added} новых сидов (пул={len(load_pool())})")
         # Brave — ПОСЛЕДНИМ (может уронить A-Parser); гоняем только если UI жив, после — контроль
         brave_seeds = prioritize(build_brave_queries(), "brave", BRAVE_BATCH)
         if brave_seeds and ui_alive():
-            run_task(pw, "SE::Brave", f"{NODE_ID}_h_brave_{stamp}", brave_seeds, None, master, "brave", "brave", task_preset=TP_BRAVE)
+            _run_task_safe(pw, "SE::Brave", f"{NODE_ID}_h_brave_{stamp}", brave_seeds, None, master, "brave", "brave", task_preset=TP_BRAVE)
             if not ui_alive():
                 print("  [brave] ⚠️ A-Parser НЕ отвечает после Brave — watchdog поднимет, раунды восстановятся")
         elif not ui_alive():
