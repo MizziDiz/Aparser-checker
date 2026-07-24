@@ -467,6 +467,12 @@ ADD_BTN_READY_JS = r"""(labels)=>{ const w=labels.map(s=>s.trim().toLowerCase())
   for(const b of document.querySelectorAll('.x-btn')){const t=(b.innerText||'').trim().toLowerCase();
     if(w.includes(t)&&!b.classList.contains('x-btn-disabled')){const r=b.getBoundingClientRect();
       if(r.width>0&&r.height>0)return true;}}return false;}"""
+# Пресет через модалку грузится АСИНХРОННО (~2с): ждём, пока комбо «Парсер/Parser» реально
+# станет ожидаемым парсером. Без этого раннер добавлял таск ДО загрузки → SE::Google/default.
+PARSER_APPLIED_JS = r"""(expected)=>{ if(typeof Ext==='undefined')return false;
+  const cs=Ext.ComponentQuery.query('combo,combobox').filter(c=>c.isVisible(true)&&
+    /^(Парсер|Parser)$/i.test((c.getFieldLabel&&c.getFieldLabel())||''));
+  return cs.length>0 && String(cs[0].getValue())===expected; }"""
 
 
 def _wait_or_sleep(page, js, arg=None, timeout: int = 15000, fallback: int = 2500) -> None:
@@ -496,6 +502,9 @@ def create_task(page, parser: str, set_name: str, local_file: Path,
                 _wait_or_sleep(page, STORE_LOADED_JS)        # стор пресетов «Задание/Task preset» загружен
                 if not page.evaluate(SELECT_TASKPRESET_JS, task_preset):
                     raise RuntimeError(f"task-пресет {task_preset!r} не найден на ноде")
+                # КРИТИЧНО: модалка грузит пресет асинхронно — ждём, пока парсер станет ожидаемым,
+                # иначе Add захватит состояние ДО загрузки (таск уходил на SE::Google/default).
+                _wait_or_sleep(page, PARSER_APPLIED_JS, parser, fallback=2500)
             else:
                 _wait_or_sleep(page, PARSER_READY_JS)        # стор комбо «Парсер/Parser» загружен
                 if not page.evaluate(SET_PARSER_JS, parser):
