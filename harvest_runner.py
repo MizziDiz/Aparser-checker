@@ -378,7 +378,7 @@ SET_PROFILE_JS = """(p)=>{const cs=Ext.ComponentQuery.query('combo').filter(c=>
 # task-пресет («Задание», store TasksPresets) грузит парсер + парсер-настройки + прокси-конфиг
 # разом. Так Yahoo/Brave садятся на конфиг `aparser` (рабочие прокси), а не на дефолт.
 SELECT_TASKPRESET_JS = """(name)=>{const cs=Ext.ComponentQuery.query('combo').filter(c=>
-  /^(Задание|Task)$/i.test((c.getFieldLabel&&c.getFieldLabel())||'')&&c.isVisible(true));
+  /^(Задание|Task preset)$/i.test((c.getFieldLabel&&c.getFieldLabel())||'')&&c.isVisible(true));
   if(!cs.length)return false;const c=cs[0];const r=c.getStore().findRecord(c.displayField,name);
   if(!r)return false;c.select(r);c.fireEvent('select',c,r);return true;}"""
 TP_YAHOO = "Aparser yahoo"     # task-пресет .14 (парсер SE::Yahoo + конфиг aparser)
@@ -396,37 +396,70 @@ FINALIZE_JS = r"""(fmt)=>{
 }"""
 
 
+# Фаза 1: ждать готовность Ext-состояния вместо фикс.пауз; при таймауте — фолбэк на паузу
+# (деградация к старому поведению, сломать не может). Метки кросс-язык: RU «Задание»/«Парсер»/
+# файл/текст, EN «Task preset»/«Parser»/file/text. getRange().length — надёжнее getCount()
+# (у буфер-стора getCount может быть 0 при наличии записей).
+STORE_LOADED_JS = r"""()=>{ if(typeof Ext==='undefined')return false;
+  const cs=Ext.ComponentQuery.query('combo').filter(c=>c.isVisible(true)&&
+    /^(Задание|Task preset)$/i.test((c.getFieldLabel&&c.getFieldLabel())||''));
+  if(!cs.length)return false; try{return cs[0].getStore().getRange().length>0;}catch(e){return false;} }"""
+PARSER_READY_JS = r"""()=>{ if(typeof Ext==='undefined')return false;
+  const cs=Ext.ComponentQuery.query('combo').filter(c=>c.isVisible(true)&&
+    /^(Парсер|Parser)$/i.test((c.getFieldLabel&&c.getFieldLabel())||''));
+  if(!cs.length)return false; try{return cs[0].getStore().getRange().length>0;}catch(e){return false;} }"""
+FILE_RADIO_READY_JS = r"""()=>{ const bl=(i)=>{const b=(i.id||'').replace(/-inputEl$/,'');
+  const l=b?document.getElementById(b+'-boxLabelEl'):null;return (l?l.innerText:'').trim();};
+  const g={};for(const r of document.querySelectorAll('input[type=radio]')){(g[r.name]=g[r.name]||[]).push(r);}
+  for(const n in g){const labs=g[n].map(bl);
+    if(labs.some(t=>/^(file|файл)$/i.test(t))&&labs.some(t=>/^(text|текст)$/i.test(t)))return true;}return false;}"""
+ADD_BTN_READY_JS = r"""(labels)=>{ const w=labels.map(s=>s.trim().toLowerCase());
+  for(const b of document.querySelectorAll('.x-btn')){const t=(b.innerText||'').trim().toLowerCase();
+    if(w.includes(t)&&!b.classList.contains('x-btn-disabled')){const r=b.getBoundingClientRect();
+      if(r.width>0&&r.height>0)return true;}}return false;}"""
+
+
+def _wait_or_sleep(page, js, arg=None, timeout: int = 15000, fallback: int = 2500) -> None:
+    """Ждём Ext-условие; не дождались за timeout — фолбэк на фикс.паузу (не хуже старого)."""
+    try:
+        if arg is not None:
+            page.wait_for_function(js, arg, timeout=timeout)
+        else:
+            page.wait_for_function(js, timeout=timeout)
+    except PWError:
+        page.wait_for_timeout(fallback)
+
+
 def create_task(page, parser: str, set_name: str, local_file: Path,
                 profile: str | None, fmt: str = TAGGED_FMT,
                 task_preset: str | None = None, tries: int = 3) -> None:
-    # ретрай всего заполнения редактора: ~10% раундов ловят транзиентный UI-флейк
-    # («Task Editor не открылся» / «радио File не найдено») — Ext не устаканился к клику.
-    # Повторное открытие редактора идемпотентно, пауза даёт SPA прийти в себя.
+    # ретрай всего заполнения редактора: ~10% раундов ловят транзиентный UI-флейк. Ожидания —
+    # по готовности Ext-состояния (_wait_or_sleep), а не слепыми паузами; при таймауте фолбэк.
     err: Exception | None = None
     for attempt in range(tries):
         try:
             if not ui._click_text(page, ui.NAV_TASK_EDITOR, timeout=10000):
                 raise RuntimeError("Task Editor не открылся")
-            page.wait_for_timeout(2500)
             if task_preset:
-                # «Задание»-пресет ставит парсер + настройки (aparser/прокси) сам; SET_PARSER не нужен
+                # task-пресет ставит парсер + настройки (aparser/прокси) сам; SET_PARSER не нужен
+                _wait_or_sleep(page, STORE_LOADED_JS)        # стор пресетов «Задание/Task preset» загружен
                 if not page.evaluate(SELECT_TASKPRESET_JS, task_preset):
                     raise RuntimeError(f"task-пресет {task_preset!r} не найден на ноде")
-                page.wait_for_timeout(2500)
             else:
+                _wait_or_sleep(page, PARSER_READY_JS)        # стор комбо «Парсер/Parser» загружен
                 if not page.evaluate(SET_PARSER_JS, parser):
                     raise RuntimeError(f"парсер {parser} не выбран")
-                page.wait_for_timeout(2500)
                 if profile:
                     page.evaluate(SET_PROFILE_JS, profile)
-                    page.wait_for_timeout(1500)
+            _wait_or_sleep(page, FILE_RADIO_READY_JS, fallback=1500)   # форма применилась, радио отрисовано
             if not page.evaluate(ui.SELECT_FILE_RADIO_JS):
                 raise RuntimeError("радио File не найдено")
             ui._set_file_field(page, ui.LBL_SELECT_FILE, [ui._aparser_rel_path(UI_CFG, local_file)])
             page.evaluate(FINALIZE_JS, fmt)
+            _wait_or_sleep(page, ADD_BTN_READY_JS, list(ui.BTN_ADD_TASK), timeout=10000, fallback=1000)
             if not ui._click_btn(page, ui.BTN_ADD_TASK):
                 raise RuntimeError("«Добавить задание» не найдена")
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(800)
             return                                       # успех
         except (RuntimeError, PWError) as e:
             err = e
@@ -633,7 +666,12 @@ def wait_settled(set_name: str, dest: Path, timeout: int = RESULT_WAIT_S) -> boo
             # ждёт полный timeout, тогда пуст-легитимно.
             if sz > 0 and sz == prev:
                 stable += 1
-                if stable >= 3:
+                # 8×15с=120с плато без роста = задача дописала. Раньше было 3 (45с), но
+                # медленные Yahoo-задачи (3000 запросов) делают паузы >45с при переборе/
+                # ожидании прокси — это принималось за «готово», и раннер забирал ЧАСТИЧНЫЙ
+                # результат (недосчёт Yahoo: 76 вместо 4613). 120с надёжнее отделяет паузу
+                # от завершения. Brave/футпринты стримят ровно — на них это не влияет.
+                if stable >= 8:
                     return True
             else:
                 stable, prev = 0, sz
