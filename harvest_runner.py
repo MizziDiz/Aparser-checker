@@ -369,18 +369,25 @@ def fetch_result(set_name: str, dest: Path) -> bool:
     return dest.exists()
 
 
-def cleanup_node(set_name: str) -> None:
-    _smb(f'prompt OFF; cd {NODE["queries_unc"]}; deltree {set_name}')
-    _smb(f'prompt OFF; cd {NODE["results_unc"]}; deltree {set_name}')
-
-
-def purge_old() -> None:
-    """Выместает все прошлые h_ddg_*/h_yah_* из queries и results (на случай, если
-    cleanup_node не отработал: файл был занят A-Parser в момент завершения)."""
+def purge_aged(days: int = 7) -> None:
+    """Удаляет папки queries/results на узле СТАРШЕ `days` суток (по mtime). В потоке
+    queries/results НЕ удаляем: ранняя чистка ломала таски — A-Parser не успевал прочитать
+    queries до deltree ('Queries file not exists', очередь копилась залипшими error-тасками).
+    Теперь файлы живут неделю и чистятся по возрасту. Клок узла может быть смещён на часы —
+    при недельном пороге это несущественно."""
+    cutoff = time.time() - days * 86400
+    pat = re.compile(
+        r"^\s+(\d*_?h_(?:ddg|yah|sug|fp|brave)_\S+)\s+D\s+\d+\s+"
+        r"(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})", re.M)
     for unc in (NODE["queries_unc"], NODE["results_unc"]):
         out = _smb(f'cd {unc}; ls')
-        for name in re.findall(r"^\s+(\d*_?h_(?:ddg|yah|sug|fp|brave)_\S+)\s+D", out, re.M):
-            _smb(f'prompt OFF; cd {unc}; deltree {name}')
+        for name, datestr in pat.findall(out):
+            try:
+                ts = datetime.strptime(" ".join(datestr.split()), "%a %b %d %H:%M:%S %Y").timestamp()
+            except ValueError:
+                continue
+            if ts < cutoff:
+                _smb(f'prompt OFF; cd {unc}; deltree {name}')
 
 
 # ── создание задачи без пресета ───────────────────────────────────────────────
@@ -522,8 +529,7 @@ def expand_seeds(pw, seeds: list[str], tag: str) -> list[str]:
     wait_settled(set_name, dest, timeout=400)
     sugg = [l.strip() for l in dest.read_text(encoding="utf-8", errors="ignore").splitlines()
             if l.strip()] if dest.exists() else []
-    cleanup_node(set_name)
-    dest.unlink(missing_ok=True)
+    dest.unlink(missing_ok=True)          # queries/results на узле НЕ трогаем — чистит purge_aged (неделя)
     return sugg
 
 
@@ -744,8 +750,7 @@ def run_task(pw, parser: str, set_name: str, lines: list[str], profile: str | No
     dest = WORK / set_name / f"{set_name}.result.txt"
     if not wait_settled(set_name, dest):
         print(f"  [{engine}] {set_name}: результат не получен/не стабилизировался за {RESULT_WAIT_S}с")
-        cleanup_node(set_name)
-        return None
+        return None            # queries НЕ удаляем (гонка 'Queries file not exists') — чистит purge_aged
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     doms = domains_of(dest)
     urls = len({l.split("\t", 1)[-1].strip() for l in dest.read_text(encoding="utf-8", errors="ignore").splitlines() if "http" in l})
@@ -769,8 +774,7 @@ def run_task(pw, parser: str, set_name: str, lines: list[str], profile: str | No
             pass
     master |= doms
     append_master(new)
-    cleanup_node(set_name)
-    dest.unlink(missing_ok=True)
+    dest.unlink(missing_ok=True)      # локальный результат; на узле queries/results живут неделю (purge_aged)
     row = {"ts": ts,
            "engine": engine, "set": set_name, "queries": len(lines),
            "uniq_urls": urls, "uniq_domains": len(doms),
@@ -892,7 +896,7 @@ def prioritize(candidates: list[str], source: str, batch: int) -> list[str]:
 def do_round() -> None:
     st = load_state()
     st["round"] += 1
-    purge_old()                       # вымести остатки прошлых раундов на узле
+    purge_aged()                      # чистка queries/results старше недели (в потоке НЕ удаляем)
     aged = purge_db()                 # ретенция БД: результаты старше 2 недель
     if aged:
         print(f"  [ретенция] удалено строк старше {RETENTION_DAYS} дн: {aged}")
