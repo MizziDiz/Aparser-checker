@@ -345,10 +345,16 @@ def build_footprint_pairs() -> list[str]:
 
 
 # ── SMB ──────────────────────────────────────────────────────────────────────
-def _smb(cmd: str) -> str:
-    r = subprocess.run(["smbclient", NODE["smb"], "-A", NODE["creds"], "-c", cmd],
-                       capture_output=True, text=True)
-    return r.stdout + r.stderr
+def _smb(cmd: str, timeout: int = 120) -> str:
+    """SMB-операция через smbclient. ТАЙМАУТ: узел завис/отвалился по сети → не блокируемся
+    вечно (важно для мультиузла — .2/.13 могут стать недоступны на середине раунда)."""
+    try:
+        r = subprocess.run(["smbclient", NODE["smb"], "-A", NODE["creds"], "-c", cmd],
+                           capture_output=True, text=True, timeout=timeout)
+        return r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        print(f"  [smb] ТАЙМАУТ {timeout}с на {NODE['smb']} — узел не отвечает")
+        return ""
 
 
 def deploy(set_name: str, lines: list[str]) -> Path:
