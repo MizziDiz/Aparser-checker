@@ -66,22 +66,25 @@ def main() -> None:
     if not DB.exists():
         log.error("нет harvest.db: %s", DB)
         return
-    terms = build_url_terms()
     conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     famc: Counter[str] = Counter()
     tot = kept = 0
+    # score/family уже проставлены при инжесте (harvest_runner.store_results → score_prospect,
+    # когда полный URL ещё был на руках). В БД лежит ХЭШ URL (path недоступен by design),
+    # поэтому агрегируем сохранённые столбцы по доменам, а не пере-скорим. score_url() /
+    # build_url_terms() остаются модульными — их зовёт раннер при инжесте.
     with OUT.open("w", encoding="utf-8") as f:
-        for (url,) in conn.execute("SELECT DISTINCT url FROM results"):
-            score, fams = score_url(url, terms)
+        for domain, score, family in conn.execute(
+                "SELECT DISTINCT domain, score, family FROM results"):
             tot += 1
-            if score >= a.min_score and fams:
-                famc[fams[0]] += 1
-                f.write(f"{score}\t{fams[0]}\t{url}\n")
+            if score >= a.min_score and family:
+                famc[family] += 1
+                f.write(f"{score}\t{family}\t{domain}\n")
                 kept += 1
     conn.close()
 
     pct = round(100 * kept / tot, 1) if tot else 0.0
-    log.info("URL проскорено: %d | проспектов (score>=%d): %d (%.1f%%)", tot, a.min_score, kept, pct)
+    log.info("строк базы: %d | проспектов (score>=%d): %d (%.1f%%)", tot, a.min_score, kept, pct)
     log.info("по семействам: %s", ", ".join(f"{k}={v}" for k, v in famc.most_common()))
     log.info("-> %s", OUT)
 

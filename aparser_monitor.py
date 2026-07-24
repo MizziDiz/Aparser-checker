@@ -604,6 +604,10 @@ def main() -> int:
     log = get_logger(want_debug(cfg))   # уровень DEBUG при --debug / "debug": true
     if "--test-telegram" in sys.argv:
         return test_telegram(cfg)
+    if "--autosend-check" in sys.argv:
+        from lib.autosend import check_autosend
+        check_autosend(cfg, log)
+        return 0
     if "--relay" in sys.argv:
         from lib.relay import run_relay
         return run_relay(cfg, log)

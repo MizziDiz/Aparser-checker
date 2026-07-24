@@ -1,0 +1,29 @@
+# Стартовые сиды тем на языках ЦЕЛЕВЫХ гео (geo_plan.yaml) — вручную, без API.
+# Порядок = темы themes.yaml (16). Раннер (load_geo_seeds) добавляет их в базу;
+# Suggest + HTML-майнинг (harvest_seedmine) расширяют в нативные хвосты.
+# en не нужен (ЮАР/Филиппины/Австралия/Сингапур покрыты англ. темами themes.yaml).
+# Нецелевые языки убраны. Для th/vi/id/ms/zh это бутстрап — майнинг из HTML доведёт до объёма.
+
+seeds:
+  es: [posicionamiento web, marketing digital, diseño web, alojamiento web, seguros, préstamos,
+       inmobiliaria, viajes, salud, fitness, educación, software, tienda online, finanzas, servicios legales, reformas]
+  pt: [otimização seo, marketing digital, criação de sites, hospedagem de sites, seguros, empréstimos,
+       imóveis, viagens, saúde, fitness, educação, software, loja virtual, finanças, serviços jurídicos, reformas]
+  tr: [seo, dijital pazarlama, web tasarım, web hosting, sigorta, kredi,
+       emlak, seyahat, sağlık, fitness, eğitim, yazılım, e-ticaret, finans, hukuki danışmanlık, tadilat]
+  fr: [référencement, marketing digital, création de site, hébergement web, assurance, prêts,
+       immobilier, voyage, santé, remise en forme, éducation, logiciel, boutique en ligne, finance, services juridiques, rénovation]
+  pl: [pozycjonowanie stron, marketing internetowy, projektowanie stron, hosting, ubezpieczenia, pożyczki,
+       nieruchomości, podróże, zdrowie, fitness, edukacja, oprogramowanie, sklep internetowy, finanse, usługi prawne, remont]
+  ja: ["SEO対策", "デジタルマーケティング", "ホームページ制作", "レンタルサーバー", "保険", "ローン",
+       "不動産", "旅行", "健康", "フィットネス", "教育", "ソフトウェア", "ネットショップ", "金融", "法律相談", "リフォーム"]
+  th: ["รับทำ seo", "การตลาดดิจิทัล", "ออกแบบเว็บไซต์", "เว็บโฮสติ้ง", "ประกันภัย", "สินเชื่อ",
+       "อสังหาริมทรัพย์", "ท่องเที่ยว", "สุขภาพ", "ฟิตเนส", "การศึกษา", "ซอฟต์แวร์", "อีคอมเมิร์ซ", "การเงิน", "บริการกฎหมาย", "ปรับปรุงบ้าน"]
+  vi: [dịch vụ seo, tiếp thị số, thiết kế web, lưu trữ web, bảo hiểm, vay tiền,
+       bất động sản, du lịch, sức khỏe, thể hình, giáo dục, phần mềm, thương mại điện tử, tài chính, dịch vụ pháp lý, sửa nhà]
+  id: [jasa seo, pemasaran digital, desain web, hosting, asuransi, pinjaman,
+       properti, wisata, kesehatan, kebugaran, pendidikan, perangkat lunak, toko online, keuangan, jasa hukum, renovasi rumah]
+  ms: [khidmat seo, pemasaran digital, reka bentuk web, hosting web, insurans, pinjaman,
+       hartanah, pelancongan, kesihatan, kecergasan, pendidikan, perisian, kedai online, kewangan, khidmat guaman, ubahsuai rumah]
+  zh: ["seo优化", "数字营销", "网站设计", "虚拟主机", "保险", "贷款",
+       "房地产", "旅游", "健康", "健身", "教育", "软件", "电子商务", "金融", "法律服务", "家装"]

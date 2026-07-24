@@ -3,3 +3,5 @@ requests>=2.31.0
 playwright>=1.40.0
 # для статистики доменных зон (--stats)
 tldextract>=5.1.0
+# для чтения gео/тем/футпринт-конфигов (keygen/kwbuilder/config.py, harvest_runner.py)
+PyYAML>=6.0

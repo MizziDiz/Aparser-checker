@@ -1,19 +1,19 @@
 #!/bin/bash
 # recreate-creds.sh — пересоздание кредов/конфигов харвеста С НУЛЯ, если они исчезли.
 # Создаёт файлы-скелеты с плейсхолдерами; заполни <...> реальными значениями.
-# Секреты (пароли/токен) в git НЕ хранятся — только здесь, локально на .50.
+# Секреты (пароли/токен) в git НЕ хранятся — только локально на контроллере.
 set -e
 cd "$(dirname "$0")"          # корень репо
 
 echo "== 1. SMB-креды нод (/root/.smbcreds<N>) =="
-# Пароли на нодах сейчас пустые (username=Administrator, domain=WORKGROUP).
-# Если сменятся — впиши в password=.
-for n in 2 13 14; do
+# Впиши реальные креды SMB-доступа к узлу (username/password/domain).
+NODES="${NODES:-1 2 3}"          # ← номера своих узлов, через пробел (пример: 1 2 3)
+for n in $NODES; do
   f="/root/.smbcreds$n"
   if [ -e "$f" ]; then echo "  $f уже есть — пропуск"; continue; fi
-  printf 'username=Administrator\npassword=\ndomain=WORKGROUP\n' > "$f"
+  printf 'username=<SMB_USER>\npassword=<SMB_PASS>\ndomain=WORKGROUP\n' > "$f"
   chmod 600 "$f"
-  echo "  создан $f (пароль пустой)"
+  echo "  создан $f (впиши username/password)"
 done
 
 echo "== 2. Инфра-конфиг раннера (data/nodes/harvest_node.json) =="
@@ -34,7 +34,7 @@ fi
 
 echo "== 3. Node-конфиги монитора (data/nodes/node-<N>.config.json) =="
 # Telegram-токен/чат + UI-url/порт/таймауты. Скелет с плейсхолдерами.
-for n in 2 13 14; do
+for n in $NODES; do
   f="data/nodes/node-$n.config.json"
   if [ -e "$f" ]; then echo "  $f уже есть — пропуск"; continue; fi
   cat > "$f" <<JSON
@@ -54,7 +54,7 @@ done
 
 echo ""
 echo "ГОТОВО. Что заполнить вручную:"
-echo "  - /root/.smbcreds<N>: password (если не пустой)"
+echo "  - /root/.smbcreds<N>: username/password SMB-доступа"
 echo "  - data/nodes/harvest_node.json: LAN-IP узла + путь к кредам"
 echo "  - data/nodes/node-<N>.config.json: LAN-IP, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID"
 echo "  Токен/чат Telegram — из BotFather / у владельца."

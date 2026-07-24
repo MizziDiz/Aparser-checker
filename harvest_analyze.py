@@ -20,8 +20,12 @@ SH = "/srv/share/Aparser results"
 
 
 def sample_ours(n):
+    # в БД хранится ХЭШ URL + домен (полный путь не сохраняем by design) → берём домены
+    # и фетчим главную. Конкуренты (sample_file) читаются полными URL, поэтому наша
+    # выборка слегка НЕДООЦЕНИВАЕТ футпринты вглубь сайта — это предел хэш-хранилища, не баг.
     c = sqlite3.connect(f"file:{REPO}/data/harvest/harvest.db?mode=ro", uri=True)
-    urls = [u for (u,) in c.execute("SELECT DISTINCT url FROM results ORDER BY RANDOM() LIMIT ?", (n * 3,))]
+    urls = ["http://" + d for (d,) in c.execute(
+        "SELECT DISTINCT domain FROM results ORDER BY RANDOM() LIMIT ?", (n * 3,))]
     c.close()
     return random.sample(urls, min(n, len(urls)))
 

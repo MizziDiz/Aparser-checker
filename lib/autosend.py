@@ -115,6 +115,86 @@ def _delete(path: Path, stop: Path, logger: logging.Logger) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Диагностика (--autosend-check): сухой прогон, ничего не копирует/не удаляет
+# --------------------------------------------------------------------------- #
+def check_autosend(cfg: dict, logger: logging.Logger) -> None:
+    """Печатает, ПОЧЕМУ autosend отправит/пропустит каждый файл. Read-only.
+
+    В отличие от --test-telegram (проверяет только канал Telegram), этот режим
+    проверяет реальный отбор: сопоставление задача↔результат, порог settle и
+    журнал уже отправленных. Запускать на проблемном узле (13/14).
+    """
+    qd, rd, dest = cfg.get("queries_dir", ""), cfg.get("results_dir", ""), cfg.get("autosend_dest", "")
+    print("── autosend --check ─────────────────────────────────────────")
+    print(f"queries_dir : {qd or '(пусто)'}")
+    print(f"results_dir : {rd or '(пусто)'}")
+    print(f"dest        : {dest or '(пусто)'}")
+    if not (qd and rd and dest):
+        print("❌ autosend ВЫКЛЮЧЕН: один из трёх путей пуст → run_autosend сразу выходит.")
+        return
+    queries_dir, results_dir, dest_dir = Path(qd), Path(rd), Path(dest)
+    print(f"queries_dir существует: {queries_dir.exists()}")
+    print(f"results_dir существует: {results_dir.exists()}")
+
+    # проба записи в dest (не разрушающая): создаём и удаляем временный файл
+    probe = dest_dir / ".autosend_write_probe"
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        print("dest доступен на запись: True")
+    except OSError as e:
+        print(f"dest доступен на запись: False → {e}")
+
+    if not queries_dir.exists():
+        print("❌ Папка queries не найдена — отправлять нечего.")
+        return
+
+    settle = float(cfg.get("autosend_settle_min", 2) or 0)
+    sent = load_sent(logger)
+    print(f"settle_min={settle}  |  в журнале уже отправлено записей: {len(sent)}")
+    print("─────────────────────────────────────────────────────────────")
+
+    seen = would_send = no_result = settling = already_cnt = 0
+    for root, _dirs, files in os.walk(queries_dir):
+        for qname in files:
+            seen += 1
+            qfile = Path(root) / qname
+            rel = qfile.relative_to(queries_dir)
+            result = _find_result(results_dir, rel, qname)
+            if result is None:
+                no_result += 1
+                if no_result <= 20:
+                    print(f"  ⏳ НЕТ РЕЗУЛЬТАТА  {rel}  (искали {qname} в results)")
+                continue
+            age = _age_min(result)
+            rkey = str(result.relative_to(results_dir))
+            if age < settle:
+                settling += 1
+                print(f"  ⏱ УСТАКАНИВАЕТСЯ  {rkey}  (age={age:.1f}м < {settle})")
+                continue
+            if sent.get(rkey) == _signature(result):
+                already_cnt += 1
+                print(f"  ✅ УЖЕ ОТПРАВЛЕН   {rkey}")
+                continue
+            would_send += 1
+            print(f"  📤 ОТПРАВИТ        {rkey}  (age={age:.1f}м)")
+
+    if no_result > 20:
+        print(f"  … ещё {no_result - 20} задач без результата (показаны первые 20)")
+    print("─────────────────────────────────────────────────────────────")
+    print(f"Итог: задач {seen} | отправит {would_send} | уже были {already_cnt} | "
+          f"без результата {no_result} | устаканиваются {settling}")
+    if would_send == 0 and seen > 0:
+        if no_result == seen:
+            print("⚠ Ни у одной задачи не найден результат. Вероятно, имена файлов "
+                  "результатов НЕ совпадают с именами задач, либо results_dir указывает "
+                  "не туда. Сверьте реальные пути results на этом сервере.")
+        elif already_cnt == seen - settling:
+            print("⚠ Все результаты уже помечены отправленными в журнале. Новых версий нет.")
+
+
+# --------------------------------------------------------------------------- #
 # Основная логика
 # --------------------------------------------------------------------------- #
 def run_autosend(cfg: dict, state: dict, logger: logging.Logger) -> None:
@@ -129,23 +209,30 @@ def run_autosend(cfg: dict, state: dict, logger: logging.Logger) -> None:
     cleanup = float(cfg.get("autosend_cleanup_min", 0) or 0)
     sent = load_sent(logger)
     sent_now, deleted = [], 0
+    # счётчики причин — чтобы прогон всегда объяснял, почему отправлено 0
+    seen = no_result = settling = already_cnt = 0
 
     # рекурсивно по всем файлам задач
     for root, _dirs, files in os.walk(queries_dir):
         for qname in files:
+            seen += 1
             qfile = Path(root) / qname
             rel = qfile.relative_to(queries_dir)
             result = _find_result(results_dir, rel, qname)
             if result is None:
+                no_result += 1
                 logger.debug(f"autosend: для {rel} результат ещё не найден")
                 continue
             age = _age_min(result)
             if age < settle:
+                settling += 1
                 logger.debug(f"autosend: {result.name} ещё пишется (age={age:.1f}м)")
                 continue
             rkey = str(result.relative_to(results_dir))
             sig = _signature(result)
             already = sent.get(rkey) == sig
+            if already:
+                already_cnt += 1
 
             # 1) отправка, если ещё не отправляли эту версию
             if not already:
@@ -184,3 +271,10 @@ def run_autosend(cfg: dict, state: dict, logger: logging.Logger) -> None:
                            f"({len(sent_now)} рез.) — см. ошибку отправки выше")
     if deleted:
         logger.info(f"autosend: удалено пар задача/результат: {deleted}")
+
+    # итоговая строка — пишется ВСЕГДА, объясняет, почему отправлено N (в т.ч. 0)
+    logger.info(
+        f"autosend: задач {seen}, отправлено {len(sent_now)}, уже были {already_cnt}, "
+        f"без результата {no_result}, устаканиваются {settling}, удалено {deleted} "
+        f"| queries={queries_dir} results={results_dir} dest={dest}"
+    )

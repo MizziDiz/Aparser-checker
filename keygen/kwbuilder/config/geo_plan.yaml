@@ -1,42 +1,43 @@
-# Geo plan — single source of truth for geo binding.
-# Each entry drives: seed language, ccTLD operators, priority, KPI, weight.
-#
-# Fields:
-#   unit        : short geo code used in Keywords_Pipeline.geo_unit
-#   language    : geo_language written to the sheet; also translation target
-#   hl / gl     : locale params passed to the Suggest scraper (host language / geo)
-#   operators   : ccTLD-bound operators paired with each seed. Pipe-joined on write.
-#   priority    : P1 / P2 / P3  -> original_priority
-#   kpi         : kpi_weekly_target
-#   weight_mult : multiplies theme base weight (soft_weight), clamped 0.1..2.0
-#
-# Add / remove geos freely. 24 shipped as a starting set.
+# Geo plan — ЦЕЛЕВЫЕ гео из таблицы оператора «Прирост баз по ГЕО» (с 01.06.26).
+# Нецелевые (США/Германия/Британия/Италия/Испания/Россия/Индия/Корея/Скандинавия/…)
+# УБРАНЫ полностью. priority/weight_mult отражают KPI-цель из таблицы.
+# Операторы — чистые формы (2-й уровень, где голый ccTLD «протекает» на Yahoo).
+#   unit / language / hl / gl / operators / priority / weight_mult
 
 defaults:
   kpi_by_priority: { P1: 1000, P2: 500, P3: 200 }
 
 geos:
-  - { unit: US, language: en, hl: en, gl: us, operators: ["site:.com", "site:.us"], priority: P1, weight_mult: 1.25 }
-  - { unit: UK, language: en, hl: en, gl: uk, operators: ["site:.co.uk", "site:.uk"], priority: P1, weight_mult: 1.20 }
-  - { unit: DE, language: de, hl: de, gl: de, operators: ["site:.de"],               priority: P1, weight_mult: 1.20 }
-  - { unit: FR, language: fr, hl: fr, gl: fr, operators: ["site:.fr"],               priority: P1, weight_mult: 1.15 }
-  - { unit: ES, language: es, hl: es, gl: es, operators: ["site:.es"],               priority: P2, weight_mult: 1.10 }
-  - { unit: IT, language: it, hl: it, gl: it, operators: ["site:.it"],               priority: P2, weight_mult: 1.10 }
-  - { unit: NL, language: nl, hl: nl, gl: nl, operators: ["site:.nl"],               priority: P2, weight_mult: 1.05 }
-  - { unit: PL, language: pl, hl: pl, gl: pl, operators: ["site:.pl"],               priority: P2, weight_mult: 1.05 }
-  - { unit: RU, language: ru, hl: ru, gl: ru, operators: ["site:.ru", "site:.su"],   priority: P2, weight_mult: 1.10 }
-  - { unit: BR, language: pt, hl: pt, gl: br, operators: ["site:.com.br", "site:.br"], priority: P1, weight_mult: 1.15 }
-  - { unit: MX, language: es, hl: es, gl: mx, operators: ["site:.com.mx", "site:.mx"], priority: P2, weight_mult: 1.05 }
-  - { unit: CA, language: en, hl: en, gl: ca, operators: ["site:.ca"],               priority: P2, weight_mult: 1.10 }
-  - { unit: AU, language: en, hl: en, gl: au, operators: ["site:.com.au", "site:.au"], priority: P2, weight_mult: 1.10 }
-  - { unit: IN, language: en, hl: en, gl: in, operators: ["site:.in", "site:.co.in"], priority: P1, weight_mult: 1.15 }
-  - { unit: JP, language: ja, hl: ja, gl: jp, operators: ["site:.jp", "site:.co.jp"], priority: P2, weight_mult: 1.05 }
-  - { unit: TR, language: tr, hl: tr, gl: tr, operators: ["site:.com.tr", "site:.tr"], priority: P2, weight_mult: 1.05 }
-  - { unit: SE, language: sv, hl: sv, gl: se, operators: ["site:.se"],               priority: P3, weight_mult: 1.00 }
-  - { unit: NO, language: no, hl: no, gl: no, operators: ["site:.no"],               priority: P3, weight_mult: 1.00 }
-  - { unit: DK, language: da, hl: da, gl: dk, operators: ["site:.dk"],               priority: P3, weight_mult: 1.00 }
-  - { unit: FI, language: fi, hl: fi, gl: fi, operators: ["site:.fi"],               priority: P3, weight_mult: 1.00 }
-  - { unit: PT, language: pt, hl: pt, gl: pt, operators: ["site:.pt"],               priority: P3, weight_mult: 1.00 }
-  - { unit: CZ, language: cs, hl: cs, gl: cz, operators: ["site:.cz"],               priority: P3, weight_mult: 1.00 }
-  - { unit: GR, language: el, hl: el, gl: gr, operators: ["site:.gr"],               priority: P3, weight_mult: 1.00 }
-  - { unit: RO, language: ro, hl: ro, gl: ro, operators: ["site:.ro"],               priority: P3, weight_mult: 1.00 }
+  # — Латинская Америка (испанский), цель 75 —
+  - { unit: CO, language: es, hl: es, gl: co, operators: ["site:.com.co"],              priority: P2, weight_mult: 1.20 }
+  - { unit: AR, language: es, hl: es, gl: ar, operators: ["site:.com.ar", "site:.ar"],  priority: P1, weight_mult: 1.25 }
+  - { unit: CL, language: es, hl: es, gl: cl, operators: ["site:.cl"],                   priority: P3, weight_mult: 1.05 }
+  - { unit: PE, language: es, hl: es, gl: pe, operators: ["site:.com.pe", "site:.pe"],   priority: P3, weight_mult: 1.05 }
+  - { unit: EC, language: es, hl: es, gl: ec, operators: ["site:.com.ec", "site:.ec"],   priority: P3, weight_mult: 1.05 }
+  - { unit: UY, language: es, hl: es, gl: uy, operators: ["site:.com.uy", "site:.uy"],   priority: P3, weight_mult: 1.05 }
+  - { unit: MX, language: es, hl: es, gl: mx, operators: ["site:.com.mx"],               priority: P3, weight_mult: 1.05 }
+  # — Бразилия 40 / Португалия 10 (португальский) —
+  - { unit: BR, language: pt, hl: pt, gl: br, operators: ["site:.com.br"],               priority: P1, weight_mult: 1.30 }
+  - { unit: PT, language: pt, hl: pt, gl: pt, operators: ["site:.pt"],                    priority: P2, weight_mult: 1.10 }
+  # — Турция 10 —
+  - { unit: TR, language: tr, hl: tr, gl: tr, operators: ["site:.com.tr"],               priority: P2, weight_mult: 1.10 }
+  # — Франция 20 —
+  - { unit: FR, language: fr, hl: fr, gl: fr, operators: ["site:.fr"],                    priority: P1, weight_mult: 1.20 }
+  # — Польша 50 —
+  - { unit: PL, language: pl, hl: pl, gl: pl, operators: ["site:.pl"],                    priority: P1, weight_mult: 1.40 }
+  # — Япония 20 —
+  - { unit: JP, language: ja, hl: ja, gl: jp, operators: ["site:.co.jp", "site:.jp"],    priority: P1, weight_mult: 1.20 }
+  # — Таиланд 10 / Вьетнам 20 —
+  - { unit: TH, language: th, hl: th, gl: th, operators: ["site:.co.th", "site:.in.th"], priority: P2, weight_mult: 1.10 }
+  - { unit: VN, language: vi, hl: vi, gl: vn, operators: ["site:.com.vn", "site:.vn"],   priority: P1, weight_mult: 1.20 }
+  # — ЮАР 15 (англ.) —
+  - { unit: ZA, language: en, hl: en, gl: za, operators: ["site:.co.za"],                priority: P2, weight_mult: 1.15 }
+  # — Океания 20: Австралия + Филиппины —
+  - { unit: AU, language: en, hl: en, gl: au, operators: ["site:.com.au"],               priority: P2, weight_mult: 1.10 }
+  - { unit: PH, language: en, hl: en, gl: ph, operators: ["site:.com.ph", "site:.ph"],   priority: P2, weight_mult: 1.10 }
+  # — Азия-1 45: Индонезия + Малайзия —
+  - { unit: ID, language: id, hl: id, gl: id, operators: ["site:.co.id", "site:.id"],    priority: P1, weight_mult: 1.25 }
+  - { unit: MY, language: ms, hl: ms, gl: my, operators: ["site:.com.my", "site:.my"],   priority: P1, weight_mult: 1.25 }
+  # — Другие страны Азии 25: Китай + Сингапур —
+  - { unit: CN, language: zh, hl: zh-CN, gl: cn, operators: ["site:.cn", "site:.com.cn"], priority: P2, weight_mult: 1.10 }
+  - { unit: SG, language: en, hl: en, gl: sg, operators: ["site:.com.sg", "site:.sg"],   priority: P2, weight_mult: 1.10 }
