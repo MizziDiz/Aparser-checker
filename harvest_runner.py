@@ -401,10 +401,29 @@ SET_PROFILE_JS = """(p)=>{const cs=Ext.ComponentQuery.query('combo').filter(c=>
   if(!r)return false;c.select(r);return true;}"""
 # task-пресет («Задание», store TasksPresets) грузит парсер + парсер-настройки + прокси-конфиг
 # разом. Так Yahoo/Brave садятся на конфиг `aparser` (рабочие прокси), а не на дефолт.
-SELECT_TASKPRESET_JS = """(name)=>{const cs=Ext.ComponentQuery.query('combo').filter(c=>
-  /^(Задание|Task preset)$/i.test((c.getFieldLabel&&c.getFieldLabel())||'')&&c.isVisible(true));
-  if(!cs.length)return false;const c=cs[0];const r=c.getStore().findRecord(c.displayField,name);
-  if(!r)return false;c.select(r);c.fireEvent('select',c,r);return true;}"""
+# Выбор task-пресета КРОСС-БИЛД: новый UI (v1.2.3390 на .2/.13) требует модалку «Select task»
+# (onTriggerClick → грид → кнопка Select) — обычный combo.select() там НЕ грузит пресет (таск
+# бежал на default!). Старый UI (.14) — классический combo.select. Пробуем модалку, иначе комбо.
+SELECT_TASKPRESET_JS = """(name)=>{
+  const cs=Ext.ComponentQuery.query('combobox,combo').filter(c=>c.isVisible(true)&&
+    /^(Задание|Task preset)$/i.test((c.getFieldLabel&&c.getFieldLabel())||''));
+  if(!cs.length)return false;
+  const combo=cs[0];
+  try{combo.onTriggerClick();}catch(e){}
+  const wins=Ext.ComponentQuery.query('window').filter(w=>w.isVisible()&&/select task/i.test(w.title||''));
+  if(wins.length){
+    const win=wins[0];const grids=win.query('grid,gridpanel,treepanel');
+    if(grids.length){const grid=grids[0];let rec=null;
+      grid.getStore().each(r=>{if(!rec&&Object.values(r.data).some(v=>String(v)===name))rec=r;});
+      if(!rec){win.close();return false;}
+      grid.getSelectionModel().select(rec);
+      const btns=win.query('button').filter(x=>/^select$/i.test((x.getText&&x.getText())||''));
+      if(btns.length){btns[0].el.dom.click();return true;}
+      win.close();return false;}
+    win.close();}
+  try{combo.collapse();}catch(e){}
+  const r=combo.getStore().findRecord(combo.displayField,name);
+  if(!r)return false;combo.select(r);combo.fireEvent('select',combo,r);return true;}"""
 # task-пресеты ПО УЗЛУ (имена заведены по-разному): .14 «Aparser yahoo/brave»,
 # .2 «Yahoo/Brave aparser», .13 «yahoo/brave aparser» (строчными). Метка комбо кросс-язык
 # (RU «Задание»/EN «Task preset») — в SELECT_TASKPRESET_JS. Оба пресета вяжут конфиг `aparser`.
