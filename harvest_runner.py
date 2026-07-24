@@ -444,13 +444,14 @@ ADD_BTN_READY_JS = r"""(labels)=>{ const w=labels.map(s=>s.trim().toLowerCase())
 
 
 def _wait_or_sleep(page, js, arg=None, timeout: int = 15000, fallback: int = 2500) -> None:
-    """Ждём Ext-условие; не дождались за timeout — фолбэк на фикс.паузу (не хуже старого)."""
+    """Ждём Ext-условие; не дождались/любой сбой ожидания — фолбэк на фикс.паузу (не хуже
+    старого). arg — keyword-only в wait_for_function; ловим Exception, чтобы фолбэк держал."""
     try:
         if arg is not None:
-            page.wait_for_function(js, arg, timeout=timeout)
+            page.wait_for_function(js, arg=arg, timeout=timeout)
         else:
             page.wait_for_function(js, timeout=timeout)
-    except PWError:
+    except Exception:
         page.wait_for_timeout(fallback)
 
 
