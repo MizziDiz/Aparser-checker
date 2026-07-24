@@ -30,14 +30,13 @@ aparser-config.exe
 keygen/parser_batches/
 query_dedupe.sqlite
 
-# автономный раннер добычи — содержит LAN-IP узла и путь к SMB-кредам (инфра)
-harvest_runner.py
+# рабочие данные харвеста
 data/harvest/
 
-# инфра/операционка — содержат реальные LAN-IP, роли узлов, пути к кредам. НЕ коммитить.
-# (gitignore не поддерживает inline-комментарии — паттерны отдельными строками)
-harvest_healthcheck.py
-harvest_seedmine.py
+# ИНФРА-СЕКРЕТЫ (реальные LAN-IP/роли/пути к кредам) — НЕ коммитить.
+# harvest_runner.py вынесен в паблик-версию: инфра вынесена в data/nodes/harvest_node.json
+# (см. harvest_node.example.json). Реальный конфиг узла — ниже, gitignored.
+data/nodes/harvest_node.json
 aparser-guard.bat
 HANDOFF.md
 data/ops/

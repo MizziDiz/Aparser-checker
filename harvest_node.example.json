@@ -1,0 +1,7 @@
+{
+  "smb": "//<LAN-IP-УЗЛА>/C$",
+  "creds": "/root/.smbcreds<N>",
+  "queries_unc": "soft\\aparser\\queries",
+  "results_unc": "soft\\aparser\\results",
+  "ui_url": "http://<LAN-IP-УЗЛА>:9092/"
+}
