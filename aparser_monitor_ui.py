@@ -126,8 +126,9 @@ def load_ui_config() -> dict:
 def open_ui(pw, cfg, headless: bool = True):
     """Открывает интерфейс, логинится при необходимости, ждёт загрузки приложения."""
     nav = int(cfg.get("ui_nav_timeout_ms", 30000) or 30000)
-    browser = pw.chromium.launch(headless=headless)
+    browser = pw.chromium.launch(headless=headless, timeout=60000)   # таймаут запуска браузера
     page = browser.new_page()
+    page.set_default_timeout(nav)          # таймаут по умолчанию на ВСЕ page-действия (клик/ожидание)
     page.goto(cfg["aparser_ui_url"], wait_until="domcontentloaded", timeout=nav)
     if page.query_selector(LOGIN_PASSWORD):
         page.fill(LOGIN_PASSWORD, cfg["aparser_ui_password"])
