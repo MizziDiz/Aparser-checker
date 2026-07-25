@@ -959,8 +959,17 @@ def unit_stats(source: str) -> dict[tuple[str, str], tuple[int, int]]:
     return {k: (v[-1], len(v)) for k, v in tmp.items()}
 
 
+PRIORITIZE_CAP = 40000     # E1: кап кандидатов ДО сортировки. Yahoo даёт ~919k — сортировать всё
+                           # каждый раунд дорого (score=kpi_weight+classify на КАЖДОМ, ×3 узла).
+                           # Сэмплируем до кап: ротация по раундам покрывает пространство, KPI-тилт
+                           # сохраняется внутри сэмпла. Brave/footprint (≤28k) — без изменений.
+
+
 def prioritize(candidates: list[str], source: str, batch: int) -> list[str]:
-    """Сортирует запросы: не гонявшиеся (explore) → продуктивные (по new) → насыщенные."""
+    """Сортирует запросы: не гонявшиеся (explore) → продуктивные (по new) → насыщенные.
+    Крупные наборы (Yahoo ~919k) сэмплируются до PRIORITIZE_CAP перед сортировкой (CPU/раунд)."""
+    if len(candidates) > PRIORITIZE_CAP:
+        candidates = random.sample(candidates, PRIORITIZE_CAP)
     stats = unit_stats(source)
 
     def score(q: str):
