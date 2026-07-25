@@ -756,48 +756,65 @@ def wait_settled(set_name: str, dest: Path, timeout: int = RESULT_WAIT_S) -> boo
     return dest.exists()
 
 
-def wait_task_done(page, set_name: str, timeout: int = RESULT_WAIT_S) -> bool:
-    """Фаза 2: ждёт завершения задачи по ОЧЕРЕДИ UI (корректный сигнал), а не по плато файла.
-    Раннер ставит одну задачу и ждёт её; узел гонит только наши задачи → active_count==0
-    (после того как задачу ВИДЕЛИ активной) = готово. True — дождались; False — таймаут/
-    UI-сбой/задача так и не появилась (тогда фолбэк на wait_settled по файлу)."""
-    t0, zero, seen = time.time(), 0, False
+def _task_id(title: str) -> int:
+    m = re.match(r"\s*#(\d+)", title or "")
+    return int(m.group(1)) if m else -1
+
+
+ACTIVE_ST = ("work", "waitslot", "starting", "checkproxy", "checking proxy")
+
+
+def wait_complete(page, set_name: str, dest: Path, timeout: int = RESULT_WAIT_S) -> bool:
+    """F4+F15: КОРРЕКТНАЯ детекция завершения по очереди UI (done==total), а не плато размера
+    и не 45-мин таймер. Фетчим результат на КАЖДОМ опросе → всегда свежая копия; при done==total
+    делаем финальный фетч = ПОЛНЫЙ результат (нет недосчёта). Пустая задача (done==total, 0 находок)
+    завершается СРАЗУ, не ждёт весь timeout. delete-on-complete не страшен: последний фетч на руках.
+    Нашу задачу опознаём по id (#N) — самая свежая активная сразу после Add."""
+    dest.unlink(missing_ok=True)
+    t0, my_id = time.time(), None
     while time.time() - t0 < timeout:
+        fetch_result(set_name, dest)                          # свежая копия во время задачи
         try:
-            a = ui.active_count(ui.collect_cards(page, UI_CFG))
+            cards = ui.collect_cards(page, UI_CFG)
         except PWError:
-            return False                       # UI сломался → фолбэк на file-stability
-        if a >= 1:
-            seen, zero = True, 0               # задача в работе
-        elif seen:
-            zero += 1                           # была активна, теперь 0 → завершается
-            if zero >= 2:
-                return True
-        elif time.time() - t0 > 240:
-            return False                        # 4 мин без активной задачи → фолбэк
-        page.wait_for_timeout(20000)            # опрос очереди каждые 20с
-    return False
+            time.sleep(10); continue
+        if my_id is None:                                     # ещё не зафиксировали нашу задачу
+            act = [c for c in cards if (c.get("status") or "").lower() in ACTIVE_ST]
+            if act:
+                my_id = max(_task_id(c.get("title", "")) for c in act)   # только что добавленная
+            elif time.time() - t0 > 180:
+                return dest.exists()                          # задача так и не появилась
+            time.sleep(6); continue
+        cur = next((c for c in cards if _task_id(c.get("title", "")) == my_id), None)
+        if cur is None:                                       # ушла из очереди (delete-on-complete) → готово
+            return dest.exists()
+        tot, dn = cur.get("total"), cur.get("done")
+        if tot and dn is not None and dn == tot:              # ВСЕ запросы обработаны = завершено
+            fetch_result(set_name, dest)                      # финальный фетч = полный результат
+            return True
+        time.sleep(8)                                         # опрос каждые ~8с
+    return dest.exists()
 
 
 def run_task(pw, parser: str, set_name: str, lines: list[str], profile: str | None,
              master: set[str], engine: str, source: str = "",
              task_preset: str | None = None) -> dict | None:
     deploy(set_name, lines)
+    dest = WORK / set_name / f"{set_name}.result.txt"
+    # F4+F15: держим UI-сессию открытой и ждём ЗАВЕРШЕНИЯ по очереди (done==total), фетчим полный
+    # результат ВО ВРЕМЯ задачи (не по плато, не по 45-мин таймеру). Корректный сигнал завершения.
     b, page = ui.open_ui(pw, UI_CFG, headless=True)
+    got = False
     try:
         page.wait_for_function("typeof Ext !== 'undefined'", timeout=120000)
         create_task(page, parser, set_name, WORK / set_name / f"{set_name}.txt",
                     profile, task_preset=task_preset)
+        got = wait_complete(page, set_name, dest)
     finally:
         b.close()
-    # ЗАВЕРШЕНИЕ ждём по стабилизации файла (fetch ВО ВРЕМЯ задачи). Детекция по очереди UI
-    # (wait_task_done) ОТКЛЮЧЕНА: включён delete-on-complete → результат удаляется СРАЗУ по
-    # завершении задачи, и фетч после ui_done не находит файл (раунды 362/363 дали ноль).
-    # Компромисс: недосчёт крупных Yahoo-задач (частичный fetch), но GSA берёт полный с шары.
-    dest = WORK / set_name / f"{set_name}.result.txt"
-    if not wait_settled(set_name, dest):
-        print(f"  [{engine}] {set_name}: результат не получен/не стабилизировался за {RESULT_WAIT_S}с")
-        return None            # queries НЕ удаляем (гонка 'Queries file not exists') — чистит purge_aged
+    if not dest.exists():        # нет файла = 0 находок или не создалась; queries НЕ трогаем (purge_aged)
+        print(f"  [{engine}] {set_name}: результат не получен (готово={got})")
+        return None
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     doms = domains_of(dest)
     urls = len({l.split("\t", 1)[-1].strip() for l in dest.read_text(encoding="utf-8", errors="ignore").splitlines() if "http" in l})
