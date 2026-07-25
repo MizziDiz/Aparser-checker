@@ -10,6 +10,7 @@
 # base_weight is the theme's intrinsic soft_weight before geo weight_mult and
 # before any volume signal. Range ~0.8..1.4.
 themes:
+  # --- деньги / услуги (высокий вес: много сайтов и коммерческий трафик) ---
   - { theme: "seo",              base_weight: 1.30 }
   - { theme: "digital marketing", base_weight: 1.25 }
   - { theme: "web design",       base_weight: 1.15 }
@@ -17,15 +18,48 @@ themes:
   - { theme: "insurance",        base_weight: 1.20 }
   - { theme: "loans",            base_weight: 1.20 }
   - { theme: "real estate",      base_weight: 1.15 }
-  - { theme: "travel",           base_weight: 1.10 }
-  - { theme: "health",           base_weight: 1.10 }
-  - { theme: "fitness",          base_weight: 1.05 }
-  - { theme: "education",        base_weight: 1.05 }
-  - { theme: "software",         base_weight: 1.10 }
-  - { theme: "ecommerce",        base_weight: 1.10 }
   - { theme: "finance",          base_weight: 1.15 }
   - { theme: "legal services",   base_weight: 1.05 }
+  - { theme: "accounting",       base_weight: 1.05 }
+  - { theme: "marketing",        base_weight: 1.15 }
+  - { theme: "advertising",      base_weight: 1.05 }
+  # --- крипта / трейдинг (крупные ниши, тонны форумов/блогов) ---
+  - { theme: "crypto",           base_weight: 1.15 }
+  - { theme: "bitcoin",          base_weight: 1.10 }
+  - { theme: "forex",            base_weight: 1.10 }
+  - { theme: "trading",          base_weight: 1.10 }
+  - { theme: "investing",        base_weight: 1.05 }
+  # --- гемблинг (классические GSA-ниши, огромный охват сайтов) ---
+  - { theme: "casino",           base_weight: 1.15 }
+  - { theme: "poker",            base_weight: 1.05 }
+  - { theme: "betting",          base_weight: 1.10 }
+  # --- здоровье / образ жизни ---
+  - { theme: "health",           base_weight: 1.10 }
+  - { theme: "fitness",          base_weight: 1.05 }
+  - { theme: "weight loss",      base_weight: 1.10 }
+  - { theme: "supplements",      base_weight: 1.05 }
+  - { theme: "nutrition",        base_weight: 1.00 }
+  - { theme: "beauty",           base_weight: 1.05 }
+  - { theme: "skincare",         base_weight: 1.00 }
+  - { theme: "fashion",          base_weight: 1.05 }
+  # --- тех / контент ---
+  - { theme: "software",         base_weight: 1.10 }
+  - { theme: "vpn",              base_weight: 1.05 }
+  - { theme: "gaming",           base_weight: 1.05 }
+  - { theme: "blogging",         base_weight: 1.05 }
+  - { theme: "wordpress",        base_weight: 1.05 }
+  - { theme: "photography",      base_weight: 1.00 }
+  # --- быт / услуги ---
+  - { theme: "travel",           base_weight: 1.10 }
+  - { theme: "education",        base_weight: 1.05 }
+  - { theme: "ecommerce",        base_weight: 1.10 }
   - { theme: "home improvement", base_weight: 1.00 }
+  - { theme: "automotive",       base_weight: 1.05 }
+  - { theme: "pets",             base_weight: 1.00 }
+  - { theme: "gardening",        base_weight: 1.00 }
+  - { theme: "cooking",          base_weight: 1.00 }
+  - { theme: "dating",           base_weight: 1.05 }
+  - { theme: "jobs",             base_weight: 1.00 }
 
 # Modifiers appended to a theme to widen the surface. Keep them generic and
 # language-neutral-ish; translate.py can localize them per geo as well.
@@ -40,6 +74,13 @@ modifiers:
   - "company"
   - "tips"
   - "for beginners"
+  # прямо всплывают ПОСТАБЕЛЬНЫЕ цели для GSA (форумы/блоги/сообщества):
+  - "forum"
+  - "blog"
+  - "community"
+  - "tutorial"
+  - "news"
+  - "deals"
 
 # include_bare: also emit the theme alone (no modifier) as a seed.
 include_bare: true

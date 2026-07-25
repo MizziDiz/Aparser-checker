@@ -160,6 +160,7 @@ def build_seeds() -> list[str]:
 YAHOO_BASE_OPS = [
     # intitle:{s} убран — замер 2026-07-21: intitle на Yahoo отдаёт 0. Рабочие на Yahoo:
     # inurl:, site:.tld+ключ, кавычки-фразы (site:+footprint ВМЕСТЕ = 0, не комбинируем).
+    '{s}',                        # ГОЛЫЙ ключ — Yahoo держит; 0 был от узких ccTLD, не от bare
     '{s} inurl:blog',
     '{s} inurl:forum',
     '{s} "powered by wordpress"',
@@ -761,15 +762,14 @@ def _task_id(title: str) -> int:
     return int(m.group(1)) if m else -1
 
 
-ACTIVE_ST = ("work", "waitslot", "starting", "checkproxy", "checking proxy")
-
-
-def wait_complete(page, set_name: str, dest: Path, timeout: int = RESULT_WAIT_S) -> bool:
+def wait_complete(page, set_name: str, dest: Path, pre_max_id: int = -1,
+                   timeout: int = RESULT_WAIT_S) -> bool:
     """F4+F15: КОРРЕКТНАЯ детекция завершения по очереди UI (done==total), а не плато размера
     и не 45-мин таймер. Фетчим результат на КАЖДОМ опросе → всегда свежая копия; при done==total
     делаем финальный фетч = ПОЛНЫЙ результат (нет недосчёта). Пустая задача (done==total, 0 находок)
     завершается СРАЗУ, не ждёт весь timeout. delete-on-complete не страшен: последний фетч на руках.
-    Нашу задачу опознаём по id (#N) — самая свежая активная сразу после Add."""
+    Нашу задачу опознаём по id (#N) строго БОЛЬШЕ pre_max_id (снятого до Add) — при бэклоге
+    старых активных задач в очереди 'max id среди активных' ловит чужую (старую) задачу."""
     dest.unlink(missing_ok=True)
     t0, my_id = time.time(), None
     while time.time() - t0 < timeout:
@@ -779,11 +779,15 @@ def wait_complete(page, set_name: str, dest: Path, timeout: int = RESULT_WAIT_S)
         except PWError:
             time.sleep(10); continue
         if my_id is None:                                     # ещё не зафиксировали нашу задачу
-            act = [c for c in cards if (c.get("status") or "").lower() in ACTIVE_ST]
-            if act:
-                my_id = max(_task_id(c.get("title", "")) for c in act)   # только что добавленная
+            new_ids = [_task_id(c.get("title", "")) for c in cards if _task_id(c.get("title", "")) > pre_max_id]
+            if new_ids:
+                my_id = max(new_ids)                          # только что добавленная (id новее снятого до Add)
             elif time.time() - t0 > 180:
-                return dest.exists()                          # задача так и не появилась
+                # collect_cards() не отдаёт карточек (узел «слеп» для очереди — тот же баг,
+                # что и в мониторе) → детекция по очереди недоступна. Фолбэк на файловое
+                # плато (wait_settled), а не немедленный fail — иначе раунд гарантированно
+                # без результата на узлах, где карточки не читаются.
+                return wait_settled(set_name, dest, timeout=max(timeout - (time.time() - t0), 60))
             time.sleep(6); continue
         cur = next((c for c in cards if _task_id(c.get("title", "")) == my_id), None)
         if cur is None:                                       # ушла из очереди (delete-on-complete) → готово
@@ -807,9 +811,13 @@ def run_task(pw, parser: str, set_name: str, lines: list[str], profile: str | No
     got = False
     try:
         page.wait_for_function("typeof Ext !== 'undefined'", timeout=120000)
+        try:                                                   # снимок ДО Add: бэклог не спутать с нашей задачей
+            pre_max_id = max((_task_id(c.get("title", "")) for c in ui.collect_cards(page, UI_CFG)), default=-1)
+        except PWError:
+            pre_max_id = -1
         create_task(page, parser, set_name, WORK / set_name / f"{set_name}.txt",
                     profile, task_preset=task_preset)
-        got = wait_complete(page, set_name, dest)
+        got = wait_complete(page, set_name, dest, pre_max_id)
     finally:
         b.close()
     if not dest.exists():        # нет файла = 0 находок или не создалась; queries НЕ трогаем (purge_aged)
