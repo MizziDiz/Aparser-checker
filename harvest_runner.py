@@ -669,6 +669,8 @@ def classify(query: str, engine: str) -> tuple[str, str]:
     if m:
         op = m.group(2)
         return m.group(1).strip(), ("powered-by-wp" if op.startswith('"') else op)
+    if not any(t in query for t in ("site:", "inurl:", "intitle:", '"')):
+        return query, "plain"           # ГОЛЫЙ ключ на Yahoo (новый bare-трек) — тоже plain, не «other»
     return query, "other"
 
 
@@ -887,11 +889,19 @@ def dynamic_generics(cutoff: int = WIDTH_CUTOFF) -> set[str]:
     return g
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Атомарная запись ОБЩЕГО файла (temp+rename, temp пер-узловой): 3 узла конкурентно
+    не повредят содержимое (последний-писатель-выигрывает, но без частичной порчи)."""
+    tmp = path.with_suffix(path.suffix + f".{NODE_ID}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
 def write_targets() -> tuple[int, int]:
     """targets.txt = все домены минус денлист и динамические генерики."""
     excl = load_denylist() | dynamic_generics()
     targets = sorted(load_master() - excl)
-    TARGETS.write_text("\n".join(targets) + "\n", encoding="utf-8")
+    _atomic_write(TARGETS, "\n".join(targets) + "\n")
     return len(targets), len(excl)
 
 
@@ -909,7 +919,7 @@ def write_target_geo() -> int:
     import tldextract
     tz = target_zones()
     doms = sorted(d for d in load_master() if tldextract.extract(d).suffix in tz)
-    TARGET_GEO.write_text("\n".join(doms) + "\n", encoding="utf-8")
+    _atomic_write(TARGET_GEO, "\n".join(doms) + "\n")
     return len(doms)
 
 
